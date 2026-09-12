@@ -1,16 +1,12 @@
-from src.data_loader import load_all_documents
-from src.vectorstore import FaissVectorStore
+"""CLI example: build/load a persisted FAISS index from files in data/ and ask one question.
+
+For the interactive, step-by-step version, run the Streamlit app instead:
+    streamlit run streamlit_app.py
+"""
 from src.search import RAGSearch
 
-# Example usage
 if __name__ == "__main__":
-    
-    docs = load_all_documents("data")
-    store = FaissVectorStore("faiss_store")
-    #store.build_from_documents(docs)
-    store.load()
-    #print(store.query("What is attention mechanism?", top_k=3))
-    rag_search = RAGSearch()
+    rag_search = RAGSearch(persist_dir="faiss_store")
     query = "What is attention mechanism?"
     summary = rag_search.search_and_summarize(query, top_k=3)
     print("Summary:", summary)

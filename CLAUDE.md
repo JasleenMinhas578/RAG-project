@@ -4,47 +4,96 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A personal RAG (Retrieval-Augmented Generation) learning/tutorial repo. It has two parts:
+A modular RAG (Retrieval-Augmented Generation) pipeline plus a Streamlit web app
+(`streamlit_app.py`) that visualizes every step of the pipeline live for a user: upload → load &
+parse → chunk → embed → index → retrieve → prompt → generate. Built to run entirely on free tiers:
+embeddings are local (`sentence-transformers`), the vector store is local (FAISS), and only the
+final answer generation calls an LLM API (Google Gemini's free tier).
 
-- `src/` — a small reusable RAG pipeline (document loading → chunking/embedding → FAISS vector store → LLM-backed search/summarization).
-- Root-level and `notebook/`/`agenticrag/` Jupyter notebooks — standalone tutorial explorations (PDF ingestion, RAG evaluation with LangSmith, "vectorless" RAG via PageIndex, Typesense search, LangGraph agentic RAG). These are independent of `src/` and of each other; don't assume changes in one affect another.
+`archive/` holds earlier standalone tutorial notebooks (LangSmith evaluation, PageIndex vectorless
+RAG, Typesense search, LangGraph agentic RAG, basic document/PDF loading demos) kept for
+reference — they're independent of `src/` and of each other and are not wired into the app; don't
+assume changes to `src/` need to be reflected there or vice versa.
 
-There is no test suite, linter, or build system configured. There's no `.gitignore` and the directory isn't currently a git repo.
+There is no test suite or linter configured. The repo is a git repo with no remote configured yet.
 
 ## Running things
 
-Install deps: `pip install -r requirements.txt`
-
-Run the example pipeline end-to-end:
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 ```
+
+Web app (the primary way to use this project):
+```bash
+streamlit run streamlit_app.py
+```
+
+CLI example (builds/loads a FAISS index from a `data/` directory, asks one hardcoded query):
+```bash
 python app.py
 ```
-This loads documents from a `data/` directory (not present by default — create it and drop files in), builds/loads a FAISS index in `faiss_store/`, and runs a sample query through `RAGSearch`.
 
-Individual modules also have `if __name__ == "__main__"` examples runnable directly, e.g. `python -m src.data_loader`, `python -m src.embedding`, `python -m src.vectorstore` (run as modules, not as scripts, since they use `from src.xxx import ...` package-relative imports — except `search.py`'s fallback branch, which uses a bare `from data_loader import ...` and would only work run from inside `src/`).
-
-Notebooks are opened/run individually in Jupyter; each is self-contained and expects its own env vars (see below).
+Individual `src/` modules also have `if __name__ == "__main__"` examples; run them as modules
+(`python -m src.data_loader`, etc.) since they use `src.xxx`-style package-relative imports.
 
 ## Environment variables
 
-Different pieces expect different keys via a `.env` file (loaded with `python-dotenv`):
-- `src/search.py` (`RAGSearch`) talks to Groq via `langchain_groq.ChatGroq`, but currently hardcodes `groq_api_key = ""` in the constructor instead of reading `GROQ_API_KEY` from the environment — this needs to be fixed/passed in before it will actually authenticate.
-- `agenticrag/1-agenticrag.ipynb` and `PageIndex_Vectorless_RAG_CrashCourse (1).ipynb` expect `OPENAI_API_KEY` (and the PageIndex notebook a PageIndex API key).
-- `1-rag_evaluation.ipynb` expects `LANGSMITH_API_KEY` and `OPENAI_API_KEY`.
-- `typesense.ipynb` connects to a hardcoded Typesense Cloud host/API key in the notebook itself, not via `.env`.
+Only one key is needed: `GOOGLE_API_KEY` (a free Gemini key from
+https://aistudio.google.com/apikey), loaded from a `.env` file via `python-dotenv` or entered
+directly into the Streamlit sidebar at runtime — the sidebar value takes precedence when set.
+`src/search.py`'s `RAGSearch` falls back to `os.getenv("GOOGLE_API_KEY")` when no key is passed in.
 
 ## Architecture of `src/`
 
-Data flows through four collaborating classes, each in its own module:
+Data flows through four collaborating modules, each independently testable/runnable:
 
-1. **`data_loader.load_all_documents(data_dir)`** — walks a directory recursively and loads every supported file type (PDF, TXT, CSV, XLSX, DOCX, JSON) into LangChain `Document` objects via the matching `langchain_community` loader, printing `[DEBUG]`/`[ERROR]` progress per file type. Per-file load errors are caught and logged, not raised, so a bad file doesn't abort the whole load.
+1. **`data_loader.load_all_documents(data_dir)`** — walks a directory recursively and loads every
+   supported file type (PDF, TXT, CSV, XLSX, DOCX, JSON) into LangChain `Document` objects via the
+   matching `langchain_community` loader, printing `[DEBUG]`/`[ERROR]` progress per file type.
+   Per-file load errors are caught and logged, not raised, so one bad file doesn't abort the whole
+   load. The Streamlit app writes uploaded files to a temp directory and calls this the same way
+   the CLI does — there's no separate "in-memory upload" code path.
 
-2. **`embedding.EmbeddingPipeline`** — splits `Document`s into chunks with `RecursiveCharacterTextSplitter` (`chunk_documents`) and embeds chunk text with a `SentenceTransformer` model (`embed_chunks`). Chunk size/overlap and embedding model name are constructor params, defaulting to 1000/200 and `all-MiniLM-L6-v2`.
+2. **`embedding.EmbeddingPipeline`** — splits `Document`s into chunks with
+   `RecursiveCharacterTextSplitter` (`chunk_documents`) and embeds chunk text with a
+   `SentenceTransformer` model (`embed_chunks`). Chunk size/overlap and embedding model name are
+   constructor params (see `src/config.py` for defaults). `embed_chunks` accepts an optional
+   `progress_callback(done, total)` so a UI can render live progress by batching the encode calls
+   instead of the default single blocking call — the Streamlit app relies on this.
 
-3. **`vectorstore.FaissVectorStore`** — owns a FAISS `IndexFlatL2` index plus a parallel `metadata` list (chunk text per vector, indexed positionally). `build_from_documents` drives an `EmbeddingPipeline` internally to go straight from raw `Document`s to a saved index. `save`/`load` persist to `<persist_dir>/faiss.index` + `<persist_dir>/metadata.pkl`. `query` embeds a text query with its own `SentenceTransformer` instance and does a similarity search, returning `{index, distance, metadata}` dicts — note the embedding model here must match the one used to build the index, since nothing enforces that.
+3. **`vectorstore.FaissVectorStore`** — owns a FAISS `IndexFlatL2` index plus a parallel
+   `metadata` list (chunk text/source per vector, indexed positionally). `build_from_documents`
+   drives an `EmbeddingPipeline` internally as an all-in-one convenience (chunk → embed → index →
+   save) used by the CLI path; the Streamlit app instead calls the granular steps
+   (`EmbeddingPipeline.chunk_documents`/`embed_chunks` then `add_embeddings`) directly so each
+   stage can be rendered separately. `save`/`load` persist to `<persist_dir>/faiss.index` +
+   `<persist_dir>/metadata.pkl` for the CLI/disk-backed path; the web app instead uses `reset()`
+   and rebuilds a fresh in-memory store per session (no persistence needed for a single-session
+   demo). `query`/`search` return `{index, distance, similarity, metadata}` per hit — `similarity`
+   is `1/(1+distance)`, a friendlier 0–1 score derived from L2 distance for display purposes. The
+   embedding model used to build the index must match the one used to query it — nothing enforces
+   this automatically.
 
-4. **`search.RAGSearch`** — the top-level entry point. On construction it either loads an existing FAISS store from `persist_dir` or builds one from `data/` if the index files aren't found yet. `search_and_summarize(query, top_k)` retrieves chunk texts, concatenates them into a single context blob, and sends one prompt to a Groq chat model asking it to summarize the context for the query — this is a single-shot RAG (no re-ranking, no streaming, no citation of sources).
+4. **`search.RAGSearch`** — the retrieval + generation entry point, deliberately split into
+   separate steps so a caller (the Streamlit app) can show each one: `retrieve(query, top_k)` →
+   `build_prompt(query, results)` → `generate_answer(prompt)`, with `search_and_summarize` as a
+   convenience wrapper chaining all three (used by `app.py`). Can either build/load its own
+   `FaissVectorStore` from a `persist_dir`/`data/` directory (CLI path) or accept an already-built
+   `vectorstore` instance (web app path, since the app's index is built from uploaded files, not
+   disk). Uses `ChatGoogleGenerativeAI` (`langchain-google-genai`) as the LLM.
 
-`app.py` is the wiring example showing how these pieces compose.
+`src/config.py` centralizes limits/defaults (`MAX_FILES`, `MAX_TOTAL_MB`, `MAX_CHUNKS`,
+chunk size/overlap, `DEFAULT_TOP_K`, `DEFAULT_GEMINI_MODEL`) — these exist to keep the demo fast
+and within Gemini free-tier limits, not for correctness reasons. Change them here rather than
+hardcoding new values elsewhere.
 
-Everything outside `src/` (the notebooks) reimplements pieces of this pipeline independently using different stacks (OpenAI instead of Groq, LangGraph state machines, Typesense instead of FAISS, PageIndex's vectorless/chunkless approach) — treat them as reference material, not as code that should be kept in sync with `src/`.
+## `streamlit_app.py`
+
+Single-file Streamlit app built directly on the `src/` modules (no separate API/backend layer).
+Session state (`st.session_state`) holds the processed `chunks`, `embeddings`, `vectorstore`, and
+a fitted `sklearn.decomposition.PCA` (used to project chunk/query embeddings to 2D for the scatter
+plot) across reruns, since Streamlit re-executes the whole script on every interaction. Two main
+flows: `run_pipeline()` (upload → index, rendered inside `st.status`) and `answer_question()`
+(retrieve → prompt → generate, also rendered inside `st.status`), both intentionally narrating each
+pipeline step to the UI rather than just returning a final result.

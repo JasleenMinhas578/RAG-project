@@ -1,5 +1,5 @@
-from typing import List, Any
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from typing import Callable, List, Any, Optional
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from src.data_loader import load_all_documents
@@ -22,10 +22,22 @@ class EmbeddingPipeline:
         print(f"[INFO] Split {len(documents)} documents into {len(chunks)} chunks.")
         return chunks
 
-    def embed_chunks(self, chunks: List[Any]) -> np.ndarray:
+    def embed_chunks(self, chunks: List[Any], batch_size: int = 32, progress_callback: Optional[Callable[[int, int], None]] = None) -> np.ndarray:
+        """Embed chunk texts. If progress_callback is given, it's called as
+        progress_callback(done, total) after each batch, so a UI can show live progress."""
         texts = [chunk.page_content for chunk in chunks]
         print(f"[INFO] Generating embeddings for {len(texts)} chunks...")
-        embeddings = self.model.encode(texts, show_progress_bar=True)
+
+        if progress_callback is None:
+            embeddings = self.model.encode(texts, show_progress_bar=True)
+        else:
+            batches = []
+            for start in range(0, len(texts), batch_size):
+                batch = texts[start:start + batch_size]
+                batches.append(self.model.encode(batch))
+                progress_callback(min(start + batch_size, len(texts)), len(texts))
+            embeddings = np.vstack(batches) if batches else np.empty((0, self.model.get_sentence_embedding_dimension()))
+
         print(f"[INFO] Embeddings shape: {embeddings.shape}")
         return embeddings
 

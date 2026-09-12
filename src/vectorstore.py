@@ -57,14 +57,28 @@ class FaissVectorStore:
         D, I = self.index.search(query_embedding, top_k)
         results = []
         for idx, dist in zip(I[0], D[0]):
+            if idx == -1:
+                continue
             meta = self.metadata[idx] if idx < len(self.metadata) else None
-            results.append({"index": idx, "distance": dist, "metadata": meta})
+            # L2 distance -> a 0-1 "similarity" that's easier for a reader to interpret
+            similarity = float(1 / (1 + dist))
+            results.append({"index": int(idx), "distance": float(dist), "similarity": similarity, "metadata": meta})
         return results
 
     def query(self, query_text: str, top_k: int = 5):
         print(f"[INFO] Querying vector store for: '{query_text}'")
         query_emb = self.model.encode([query_text]).astype('float32')
         return self.search(query_emb, top_k=top_k)
+
+    @property
+    def ntotal(self) -> int:
+        return self.index.ntotal if self.index is not None else 0
+
+    def reset(self):
+        """Drop the in-memory index/metadata so the store can be rebuilt from scratch
+        (used when the app's uploaded documents change)."""
+        self.index = None
+        self.metadata = []
 
 # Example usage
 if __name__ == "__main__":
