@@ -102,5 +102,13 @@ def test_friendly_error_explains_rate_limit_exception_type():
     assert "free-tier limit" in friendly_error(GoogleRateLimitError("slow down"))
 
 
+def test_friendly_error_says_a_daily_quota_resets_tomorrow_not_in_a_minute():
+    message = friendly_error(Exception(
+        "429 RESOURCE_EXHAUSTED quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier"))
+    assert "today's free-tier limit" in message
+    assert "DEFAULT_GEMINI_MODEL" in message
+    assert "minute" not in message
+
+
 def test_friendly_error_keeps_details_for_unknown_errors():
     assert friendly_error(ValueError("boom")) == "Gemini API error: boom"

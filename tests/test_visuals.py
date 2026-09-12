@@ -7,6 +7,7 @@ import pytest
 
 from src.visuals import (
     FLOW_STEPS,
+    agentic_flow_svg,
     build_flow_svg,
     chips_html,
     chunk_map_figure,
@@ -14,8 +15,11 @@ from src.visuals import (
     hits_html,
     hover_text,
     neighbors_html,
+    outline_html,
     prompt_html,
+    ranked_html,
     retrieval_map_figure,
+    scores_html,
 )
 
 
@@ -112,3 +116,37 @@ def test_neighbors_html_ranks_neighbors_with_chunk_numbers():
 
 def test_neighbors_html_handles_a_single_chunk():
     assert "no other chunks" in neighbors_html([], picked_number=1)
+
+
+@pytest.mark.parametrize("needs_retrieval", [None, True, False])
+def test_agentic_flow_svg_has_no_blank_lines_and_highlights_one_path(needs_retrieval):
+    svg = agentic_flow_svg(needs_retrieval)
+    assert "\n\n" not in svg
+    white_labels = svg.count('fill="#FFFFFF"') // 2  # two text lines per highlighted box
+    expected = {None: 0, True: 4, False: 3}[needs_retrieval]
+    assert white_labels == expected
+
+
+def test_outline_html_highlights_picked_sections_in_pick_order_and_escapes_titles():
+    sections = [{"id": "S1", "source": "a.txt", "title": "<Intro>"},
+                {"id": "S2", "source": "a.txt", "title": "Venus"},
+                {"id": "S3", "source": "b.txt", "title": "Mars"}]
+    out = outline_html(sections, picked_ids=["S3", "S1"])
+    assert "&lt;Intro&gt;" in out and "<Intro>" not in out
+    assert out.count('class="rag-outline-item picked"') == 2
+    assert out.index("#2") < out.index("#1")  # S1 (picked second) appears before S3 in outline order
+    assert "a.txt" in out and "b.txt" in out
+
+
+def test_ranked_html_marks_chunks_found_by_both_and_uses_the_score_label():
+    out = ranked_html([hit(4, 0.5)], "#000", "keyword score", "none", found_by_both={4})
+    assert "keyword score" in out and "chunk 5 · found by both" in out
+    assert "none" in ranked_html([], "#000", "keyword score", "none")
+
+
+def test_scores_html_shows_four_measures_and_missing_scores():
+    measures = {key: {"score": 4, "reason": "<ok>"} for key in ("correct", "relevant", "grounded")}
+    measures["chunks_relevant"] = {"score": None, "reason": "Unreadable."}
+    out = scores_html({"measures": measures, "parsed": True})
+    assert out.count('class="rag-score"') == 4
+    assert "&lt;ok&gt;" in out and "–<span>/5</span>" in out

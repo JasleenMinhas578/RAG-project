@@ -11,6 +11,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from src import config
+from src.modes import JUDGE_MEASURES
 
 INDEX_COLOR = "#2563EB"
 QUERY_COLOR = "#16A34A"
@@ -62,6 +63,27 @@ CSS = """
 .rag-hit .x {font-size:.88rem; opacity:.88; line-height:1.5; word-break:break-word}
 .rag-sub {font-weight:600; font-size:.9rem; margin:.9rem 0 .45rem; opacity:.85}
 .rag-sub:first-child {margin-top:.1rem}
+.rag-mode {border-left:5px solid #16A34A; border-radius:10px; padding:.8rem 1rem; margin:.4rem 0 .5rem;
+  background:rgba(22,163,74,.07); font-size:.98rem; line-height:1.55}
+.rag-mode .h {font-weight:700; font-size:1.05rem; margin-bottom:.2rem}
+.rag-mode p {margin:0 0 .35rem}
+.rag-mode .s {font-size:.9rem; opacity:.8}
+.rag-callout {border:1px dashed rgba(22,163,74,.6); border-radius:8px; padding:.55rem .8rem; margin:.2rem 0 .7rem;
+  font-size:.96rem; font-weight:600}
+.rag-outline {max-height:38rem; overflow:auto; padding-right:.2rem}
+.rag-outline-item {border-left:4px solid rgba(127,127,127,.25); border-radius:4px; padding:.3rem .6rem; margin:.15rem 0;
+  font-size:.92rem; line-height:1.45; word-break:break-word}
+.rag-outline-item .sid {display:inline-block; min-width:2.6rem; font-weight:700; opacity:.6}
+.rag-outline-item.picked {font-weight:600}
+.rag-scores {display:grid; grid-template-columns:repeat(auto-fit, minmax(11rem, 1fr)); gap:.6rem; margin:.2rem 0 .4rem}
+.rag-score {border:1px solid rgba(127,127,127,.22); border-top:4px solid; border-radius:10px; padding:.6rem .75rem;
+  background:rgba(127,127,127,.06)}
+.rag-score .n {font-weight:700; font-size:.92rem}
+.rag-score .v {font-size:1.6rem; font-weight:700; line-height:1.2}
+.rag-score .v span {font-size:.9rem; opacity:.6; margin-left:.1rem}
+.rag-score .q {font-size:.8rem; opacity:.7; margin:.15rem 0 .35rem; line-height:1.35}
+.rag-score .r {font-size:.88rem; line-height:1.45}
+.rag-agentic {width:100%; max-width:760px; height:auto; display:block; margin:.2rem 0 .6rem}
 .rag-empty {font-size:.95rem; opacity:.8}
 .rag-rank {display:inline-block; min-width:2.2rem; text-align:center; color:#fff; font-weight:700;
   border-radius:6px; padding:0 .4rem; margin-right:.45rem}
@@ -125,15 +147,15 @@ def _box_x(col: int) -> int:
     return LEFT + col * PITCH
 
 
-def _arrow(x1, y1, x2, y2, dashed=False) -> str:
+def _arrow(x1, y1, x2, y2, dashed=False, color="currentColor", width=2) -> str:
     length = math.hypot(x2 - x1, y2 - y1)
     ux, uy = (x2 - x1) / length, (y2 - y1) / length
     bx, by = x2 - ux * 10, y2 - uy * 10
     px, py = -uy * 5.5, ux * 5.5
     dash = ' stroke-dasharray="6 4"' if dashed else ""
     return (
-        f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="currentColor" stroke-width="2"{dash}/>'
-        f'<polygon points="{x2:.1f},{y2:.1f} {bx + px:.1f},{by + py:.1f} {bx - px:.1f},{by - py:.1f}" fill="currentColor"/>'
+        f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{color}" stroke-width="{width}"{dash}/>'
+        f'<polygon points="{x2:.1f},{y2:.1f} {bx + px:.1f},{by + py:.1f} {bx - px:.1f},{by - py:.1f}" fill="{color}"/>'
     )
 
 
@@ -217,6 +239,59 @@ FLOW_LEGEND = (
 )
 
 
+# (x, y, label line 1, label line 2) for the Agentic RAG two-path diagram
+AGENTIC_NODES = {
+    "question": (10, 92, "Your", "question"),
+    "decide": (200, 92, "Decide: are the", "documents needed?"),
+    "retrieve": (400, 20, "Retrieve", "chunks"),
+    "answer_docs": (590, 20, "Answer from", "the chunks"),
+    "answer_direct": (590, 164, "Answer", "directly"),
+}
+AGENTIC_W, AGENTIC_H, AGENTIC_BOX_W, AGENTIC_BOX_H = 760, 240, 150, 56
+
+
+def agentic_flow_svg(needs_retrieval) -> str:
+    """Two paths: decide → retrieve → answer, and decide → answer directly. True/False highlights the
+    path taken; None draws both neutrally. Free of blank lines, like build_flow_svg."""
+    if needs_retrieval is None:
+        taken = set()
+    elif needs_retrieval:
+        taken = {"question", "decide", "retrieve", "answer_docs"}
+    else:
+        taken = {"question", "decide", "answer_direct"}
+    parts = []
+    for a, b, dy in (("question", "decide", 0), ("decide", "retrieve", -12),
+                     ("retrieve", "answer_docs", 0), ("decide", "answer_direct", 12)):
+        ax, ay = AGENTIC_NODES[a][:2]
+        bx, by = AGENTIC_NODES[b][:2]
+        on = a in taken and b in taken
+        opacity = 1 if on else (0.55 if needs_retrieval is None else 0.2)
+        arrow = _arrow(ax + AGENTIC_BOX_W + 2, ay + AGENTIC_BOX_H / 2 + dy, bx - 2, by + AGENTIC_BOX_H / 2,
+                       color=QUERY_COLOR if on else "currentColor", width=3 if on else 2)
+        parts.append(f'<g opacity="{opacity}">{arrow}</g>')
+    parts.append('<text x="392" y="40" font-size="12.5" text-anchor="end" fill="currentColor" opacity="0.8">'
+                 'yes: needs the documents</text>')
+    parts.append('<text x="380" y="204" font-size="12.5" fill="currentColor" opacity="0.8">no: answer directly</text>')
+    for node, (x, y, line1, line2) in AGENTIC_NODES.items():
+        if needs_retrieval is None:
+            fill_opacity, stroke, text_fill, opacity = 0.1, QUERY_COLOR, "currentColor", 1
+        elif node in taken:
+            fill_opacity, stroke, text_fill, opacity = 1, QUERY_COLOR, "#FFFFFF", 1
+        else:
+            fill_opacity, stroke, text_fill, opacity = 0.06, "currentColor", "currentColor", 0.4
+        cx = x + AGENTIC_BOX_W / 2
+        parts.append(
+            f'<g opacity="{opacity}"><rect x="{x}" y="{y}" width="{AGENTIC_BOX_W}" height="{AGENTIC_BOX_H}" rx="9" '
+            f'fill="{QUERY_COLOR}" fill-opacity="{fill_opacity}" stroke="{stroke}" stroke-width="1.5"/>'
+            f'<text x="{cx}" y="{y + 24}" font-size="13.5" font-weight="600" text-anchor="middle" fill="{text_fill}">'
+            f'{html.escape(line1)}</text>'
+            f'<text x="{cx}" y="{y + 41}" font-size="13.5" font-weight="600" text-anchor="middle" fill="{text_fill}">'
+            f'{html.escape(line2)}</text></g>'
+        )
+    return (f'<svg class="rag-agentic" viewBox="0 0 {AGENTIC_W} {AGENTIC_H}" role="img" '
+            f'aria-label="Agentic RAG decision paths">{"".join(parts)}</svg>')
+
+
 # --------------------------------------------------------------------------
 # HTML snippets
 # --------------------------------------------------------------------------
@@ -241,13 +316,14 @@ def find_overlap(a: str, b: str, max_len: int = 600) -> int:
     return 0
 
 
-def _hit_card(result, color: str, badge: str, dropped: bool = False, detail: str = "") -> str:
+def _hit_card(result, color: str, badge: str, dropped: bool = False, detail: str = "",
+              score_label: str = "similarity") -> str:
     sim = result["similarity"]
     text = " ".join(result["metadata"].get("text", "").split())
     return (
         f'<div class="rag-hit{" dropped" if dropped else ""}" style="border-left-color:{color}">'
         f'<div class="h"><span class="rag-rank" style="background:{color}">{badge}</span>'
-        f'<b>{sim:.2f}</b> similarity · {detail}{html.escape(result["metadata"].get("source", "unknown"))}</div>'
+        f'<b>{sim:.2f}</b> {score_label} · {detail}{html.escape(result["metadata"].get("source", "unknown"))}</div>'
         f'<div class="bar"><div style="width:{max(0.0, min(1.0, sim)) * 100:.0f}%;background:{color}"></div></div>'
         f'<div class="x">{html.escape(text[:260])}{"…" if len(text) > 260 else ""}</div></div>'
     )
@@ -272,6 +348,58 @@ def neighbors_html(neighbors, picked_number: int) -> str:
     cards.extend(_hit_card(n, INDEX_COLOR, str(k + 1), detail=f"chunk {n['index'] + 1} · ")
                  for k, n in enumerate(neighbors))
     return f'<div class="rag-hits">{"".join(cards)}</div>'
+
+
+def ranked_html(results, color: str, score_label: str, empty_text: str, found_by_both=()) -> str:
+    """A plain ranked list of search results (used for the keyword vs. vector comparison)."""
+    if not results:
+        return f'<div class="rag-empty">{empty_text}</div>'
+    cards = [
+        _hit_card(r, color, str(k + 1), score_label=score_label,
+                  detail=f"chunk {r['index'] + 1}{' · found by both' if r['index'] in found_by_both else ''} · ")
+        for k, r in enumerate(results)
+    ]
+    return f'<div class="rag-hits">{"".join(cards)}</div>'
+
+
+def outline_html(sections, picked_ids=()) -> str:
+    """The vectorless outline, one line per section. Picked sections are highlighted and numbered
+    #1, #2… in the order Gemini chose them, matching the colored blocks in the prompt."""
+    order = {section_id: k for k, section_id in enumerate(picked_ids)}
+    rows, current_source = [], None
+    for s in sections:
+        if s["source"] != current_source:
+            current_source = s["source"]
+            rows.append(f'<div class="rag-sub">{html.escape(current_source)}</div>')
+        title = html.escape(s["title"])
+        if s["id"] in order:
+            color = RANK_COLORS[order[s["id"]] % len(RANK_COLORS)]
+            rows.append(f'<div class="rag-outline-item picked" style="border-left-color:{color};background:{color}1A">'
+                        f'<span class="rag-rank" style="background:{color}">#{order[s["id"]] + 1}</span>'
+                        f'<span class="sid">{s["id"]}</span>{title}</div>')
+        else:
+            rows.append(f'<div class="rag-outline-item"><span class="sid">{s["id"]}</span>{title}</div>')
+    return f'<div class="rag-outline">{"".join(rows)}</div>'
+
+
+def _score_color(score) -> str:
+    if score is None:
+        return MUTED_COLOR
+    return "#16A34A" if score >= 4 else "#D97706" if score == 3 else NEGATIVE_COLOR
+
+
+def scores_html(judgement) -> str:
+    """Four quality-score cards (1 to 5) from the judge, each with its one-line reason."""
+    cards = []
+    for key, name, question in JUDGE_MEASURES:
+        measure = judgement["measures"][key]
+        score, color = measure["score"], _score_color(measure["score"])
+        cards.append(
+            f'<div class="rag-score" style="border-top-color:{color}"><div class="n">{name}</div>'
+            f'<div class="v" style="color:{color}">{score if score else "–"}<span>/5</span></div>'
+            f'<div class="q">{question}</div><div class="r">{html.escape(measure["reason"])}</div></div>'
+        )
+    return f'<div class="rag-scores">{"".join(cards)}</div>'
 
 
 def prompt_html(prompt: str, blocks: list, question: str) -> str:

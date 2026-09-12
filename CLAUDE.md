@@ -92,7 +92,18 @@ warnings (such as a skipped file) reach its terminal.
    `ChatGoogleGenerativeAI` with `max_retries=config.GEMINI_MAX_RETRIES` — the SDK default of 6 makes a
    rate-limited request hang for a long time.
 
-5. **`visuals`** — everything the app draws that doesn't need Streamlit: colors, the `CSS` block, the
+5. **`modes`** — the alternative RAG designs, with no Streamlit and no new services: `run_classic`,
+   `run_agentic` (a Gemini router call → retrieve or answer directly), `run_vectorless`
+   (`build_outline` from headings or paragraph first sentences → Gemini `pick_sections` → answer),
+   `run_keyword` (local TF-IDF `KeywordIndex` next to vector search), and `judge_answer` /
+   `add_quality_scores` (LLM-as-a-judge). Every engine returns a dict with at least `results`, `blocks`,
+   `prompt`, `answer`, `error`, and turns Gemini exceptions into `friendly_error` messages. Gemini is
+   reached only through `rag.generate_answer`, so tests script it (see `tests/test_modes.py`). Model
+   replies that should be JSON go through `parse_json_reply`, which tolerates code fences and prose.
+   Vectorless sections are labeled `[Chunk #k | … outline section Sn]` so citations and `prompt_html`
+   work the same as for chunks.
+
+6. **`visuals`** — everything the app draws that doesn't need Streamlit: colors, the `CSS` block, the
    flowchart SVG (`build_flow_svg`), HTML snippets (`chips_html`, `hits_html`, `prompt_html`), and the
    Plotly figures. Keep new rendering logic here so it stays unit-testable.
 
@@ -127,5 +138,12 @@ numbers match the flowchart.
   variance. The 2D and 3D figures share one builder in `visuals.py` (`three_d=` flag) so colors, markers
   and hover text can't drift apart. Step 4 also offers a nearest-neighbors list from
   `FaissVectorStore.neighbors()`. Both maps default to 2D (reason in the `MAP_VIEWS` comment).
+- **RAG modes:** step 6 has a mode menu (`modes.MODES`). Results are stored per mode in
+  `st.session_state.results_by_mode`, and the page renders the selected mode's saved result with that
+  mode's own `render_*` cards (numbered from 7). Classic and evaluation run through `run_query`, which
+  lights up the big flowchart; agentic, vectorless and keyword run through `run_mode`, compare through
+  `run_compare`, and those don't touch the big flowchart. `run_indexing` also builds `ix["outline"]` and
+  `ix["keyword_index"]`. Every extra Gemini call counts against the free tier, so keep call counts
+  visible (`modes.estimated_gemini_requests`).
 - The with/without comparison is opt-in because it costs a second free-tier request per question.
 - All document text is `html.escape`d before going into `st.html` or Plotly hover text.

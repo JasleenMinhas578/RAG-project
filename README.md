@@ -75,6 +75,28 @@ documents may not contain a good answer. It is not a measure of factual correctn
 **With vs. without your documents:** tick the comparison box to see the same question answered by
 Gemini with no retrieved context. The difference between the two answers is the point of RAG.
 
+## RAG modes
+
+The query stage has a mode menu. Every mode answers from the same indexed documents, explains its own
+numbered steps, and uses only local tools plus Gemini. No other paid service is involved.
+
+| Mode | What's different from classic RAG | Extra Gemini calls |
+|---|---|---|
+| **Classic RAG** (default) | The baseline: vector search → prompt → answer | none |
+| **Agentic RAG** | A Gemini "router" first decides whether the documents are needed, and skips retrieval when they aren't. A small diagram highlights the path taken | +1 (router) |
+| **Vectorless RAG** | No embeddings or FAISS. The app builds an outline (headings, or each paragraph's first sentence), Gemini picks the relevant sections, and their text becomes the context | +1 (section picker) |
+| **Keyword vs. vector search** | Runs local TF-IDF keyword search and vector search side by side, shows where they differ, flags question words found in no chunk (often typos), and answers from the keyword results | none |
+| **RAG evaluation** | Classic RAG, then Gemini grades the answer (LLM-as-a-judge): Correct, Relevant, Grounded, Chunks relevant, each 1–5 with a reason | +1 (judge) |
+| **Compare modes** | Runs one question through 2–4 modes and shows answers, sources and quality scores side by side, with a summary table | one run per mode, each graded |
+
+The **Show quality scores** toggle adds the judge's four scores to any mode's answer (one extra call).
+Vectorless RAG works best on structured documents with clear headings. The judge only sees the
+retrieved text, so "Correct" means "matches the retrieved text", and a model grading an AI answer
+tends to be generous.
+
+These modes teach the ideas from the notebooks in `archive/` (LangGraph agentic RAG, PageIndex
+vectorless RAG, Typesense keyword search, LangSmith evaluation) without their paid services.
+
 ---
 
 ## Getting started
@@ -200,6 +222,7 @@ RAG-project/
 │   ├── embedding.py        # Chunking + local embeddings (the model is loaded once and shared)
 │   ├── vectorstore.py      # FAISS index wrapper: add, search, save/load
 │   ├── search.py           # RAGSearch: retrieve → filter → build prompt → generate; grounding score
+│   ├── modes.py            # Agentic, vectorless, keyword (TF-IDF) and evaluation (judge) RAG modes
 │   └── visuals.py          # App rendering helpers: flowchart SVG, HTML snippets, Plotly figures
 ├── tests/                  # pytest suite
 ├── .streamlit/config.toml  # Streamlit settings (file watcher off, telemetry off)
@@ -269,7 +292,8 @@ renders. They don't call the Gemini API and don't download the embedding model.
 | Sidebar says **No GOOGLE_API_KEY found** | Create `.env` with `GOOGLE_API_KEY=...` in the project root, then restart Streamlit |
 | Code changes don't show up in the app | Hot reload is off on purpose (see below). Stop and rerun `streamlit run streamlit_app.py` |
 | Gemini returns a model-not-found error | Google retired the model. Set `DEFAULT_GEMINI_MODEL` in `src/config.py` to a current model |
-| **Gemini's free-tier limit was reached** | Wait about a minute and ask again. Turning off the comparison halves the requests per question |
+| **Gemini's free-tier limit was reached** | A per-minute limit: wait about a minute and ask again. Turning off extra calls (comparison, quality scores, Compare modes) uses fewer requests |
+| **You've reached today's free-tier limit for this Gemini model** | The free tier also caps requests per day, per model (20 a day for `gemini-flash-latest` when this was written). Try again tomorrow, or set `DEFAULT_GEMINI_MODEL` in `src/config.py` to another model, which has its own daily limit |
 | **None of the retrieved chunks reached the minimum similarity** | Rephrase the question, or lower **Minimum similarity** in the sidebar |
 | A file fails to load | It's skipped with a warning in the terminal, so the other files still load |
 

@@ -2,8 +2,8 @@
 
 A teaching app built on the src/ RAG pipeline. It runs every step of
 Retrieval-Augmented Generation on the user's own documents and shows the real
-result of each step: extracted text, chunks, embedding numbers, the FAISS index,
-retrieved chunks, the exact prompt, and the generated answer.
+result of each step. The query stage offers several RAG designs (classic, agentic,
+vectorless, keyword vs. vector, evaluation) built only from local tools and Gemini.
 
 Run with: streamlit run streamlit_app.py
 """
@@ -18,26 +18,31 @@ import pandas as pd
 import streamlit as st
 from sklearn.decomposition import PCA
 
-from src import config
+from src import config, modes
 from src.data_loader import load_all_documents
 from src.embedding import EmbeddingPipeline
 from src.search import RAGSearch, filter_by_similarity, friendly_error, grounding_score
 from src.vectorstore import FaissVectorStore
 from src.visuals import (
+    ACTIVE_COLOR,
     CSS,
     FLOW_LEGEND,
     INDEX_COLOR,
     PREVIEW_DIMS,
     QUERY_COLOR,
     STAGE_COLOR,
+    agentic_flow_svg,
     build_flow_svg,
     chips_html,
     chunk_map_figure,
     find_overlap,
     hits_html,
     neighbors_html,
+    outline_html,
     prompt_html,
+    ranked_html,
     retrieval_map_figure,
+    scores_html,
     vector_bar_figure,
 )
 
@@ -45,11 +50,50 @@ st.set_page_config(page_title="RAG Pipeline Explorer", page_icon="🔍", layout=
 
 QUERY_STEP_IDS = ("question", "embed_q", "retrieve", "prompt", "generate")
 
+# (what makes the mode different and when to choose it, the mode's steps)
+MODE_INTROS = {
+    modes.MODE_CLASSIC: (
+        "The baseline design. Every question is turned into numbers, the vector index finds the closest chunks, "
+        "and only those chunks go to Gemini. Choose it when most questions are about your documents and you want "
+        "answers you can check against the text.",
+        "7 Embed the question · 8 Retrieve · 9 Build the prompt · 10 Answer"),
+    modes.MODE_AGENTIC: (
+        "Adds a decision before retrieval. Gemini first acts as a <b>router</b> (a step that chooses which path a "
+        "question takes): it decides whether your documents are needed, and skips the search when they aren't. "
+        "Real systems use this to save time and cost on greetings or general questions. It is also the first step "
+        "toward <b>agents</b>, AI systems that choose their own next action.",
+        "7 Decide · 8 Retrieve (only if needed) · 9 Answer"),
+    modes.MODE_VECTORLESS: (
+        "Skips embeddings and the vector index completely. Gemini reads a short outline of your documents, like a "
+        "table of contents, and picks which sections to read. Choose it for long documents with clear headings, "
+        "such as reports or manuals, where the headings describe the content well.",
+        "7 Build the outline · 8 Gemini picks sections · 9 Build the prompt · 10 Answer"),
+    modes.MODE_KEYWORD: (
+        "Runs two kinds of search over the same chunks and shows them side by side: keyword search looks for the "
+        "exact words in your question, and vector search (the one classic RAG uses) looks for similar meaning. "
+        "Real systems often combine both, which is called <b>hybrid search</b>: keywords for names, codes and exact "
+        "terms, vectors for questions worded differently from the text.",
+        "7 Search two ways · 8 See where they differ · 9 Answer from the keyword results"),
+    modes.MODE_EVALUATION: (
+        "Runs classic RAG, then asks Gemini a second time to act as a judge and grade the answer. This is called "
+        "<b>LLM-as-a-judge</b>: using an AI model to score an AI answer. Teams use it to test a RAG system on many "
+        "questions automatically, before real users see the answers.",
+        "7 to 10 as in classic RAG · 11 Judge the answer"),
+    modes.MODE_COMPARE: (
+        "Runs one question through several modes at once and puts the answers side by side, each with the chunks it "
+        "used and its own quality scores. Use it to see how the designs behave on the same question.",
+        "7 Summary table · 8 Answers side by side"),
+}
+
+
+def redraw_flow(flow_placeholder):
+    # st.markdown, not st.html: st.html's sanitizer strips <svg> entirely.
+    flow_placeholder.markdown(build_flow_svg(st.session_state.flow_status), unsafe_allow_html=True)
+
 
 def mark(flow_placeholder, step_id: str, state: str):
     st.session_state.flow_status[step_id] = state
-    # st.markdown, not st.html: st.html's sanitizer strips <svg> entirely.
-    flow_placeholder.markdown(build_flow_svg(st.session_state.flow_status), unsafe_allow_html=True)
+    redraw_flow(flow_placeholder)
 
 
 # --------------------------------------------------------------------------
@@ -61,7 +105,7 @@ def stage_banner(stage: str, title: str, subtitle: str):
             f'<div class="t">{title}</div><div class="s">{subtitle}</div></div>')
 
 
-def step_header(num: int, title: str, stage: str, description: str):
+def step_header(num, title: str, stage: str, description: str):
     st.html(f'<div class="rag-step"><div class="rag-badge" style="background:{STAGE_COLOR[stage]}">{num}</div>'
             f'<div><div class="t">{title}</div><div class="d">{description}</div></div></div>')
 
@@ -81,6 +125,12 @@ def text_box(text: str):
 def note(title: str, paragraphs: list):
     body = "".join(f"<p>{p}</p>" for p in paragraphs)
     st.html(f'<div class="rag-note"><div class="h">{title}</div>{body}</div>')
+
+
+def mode_intro(mode: str):
+    text, steps = MODE_INTROS[mode]
+    st.html(f'<div class="rag-mode"><div class="h">{html.escape(mode)}</div><p>{text}</p>'
+            f'<div class="s">Steps: {steps}</div></div>')
 
 
 # Both maps default to the 2D view: it reads at a glance with no dragging, labels can't hide behind
@@ -108,14 +158,51 @@ def render_variance(ix):
                f"{ix['embeddings'].shape[1]}-number space.")
 
 
+def render_quality_scores(out: dict):
+    if out.get("judgement_error"):
+        st.warning(f"Quality scores unavailable: {out['judgement_error']}")
+        return
+    judgement = out.get("judgement")
+    if not judgement:
+        return
+    label("Quality scores, graded by Gemini")
+    st.html(scores_html(judgement))
+    if not judgement["parsed"]:
+        st.caption("The judge's reply wasn't in the expected format, so its scores are missing.")
+    st.caption("Each score runs from 1 (poor) to 5 (excellent). The judge sees only the retrieved text, and a model "
+               "grading an AI answer tends to be generous, so treat the scores as a rough signal.")
+
+
+def render_answer(out: dict):
+    if out.get("error"):
+        st.error(out["error"])
+        return
+    with st.container(border=True):
+        st.markdown(out["answer"])
+    if out.get("grounding"):
+        st.caption(f"Grounding score: {out['grounding']['score'] * 100:.0f}% (average similarity of the chunks "
+                   "behind the answer).")
+    render_quality_scores(out)
+
+
+def render_prompt_expander(out: dict, title: str = "See the exact prompt sent to Gemini"):
+    if not out.get("prompt"):
+        return
+    with st.expander(title):
+        if out.get("blocks"):
+            st.html(prompt_html(out["prompt"], out["blocks"], out["question"]))
+        else:
+            st.code(out["prompt"], language="text")
+
+
 # --------------------------------------------------------------------------
-# Running the two stages (results are saved to session state, then the page reruns
-# and renders every step from that saved state, so nothing disappears on the next click)
+# Running the indexing stage and the query modes (results are saved to session state, then the
+# page reruns and renders every step from that saved state, so nothing disappears on the next click)
 # --------------------------------------------------------------------------
 
 def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_placeholder):
     st.session_state.flow_status = {}
-    st.session_state.last_query = None
+    st.session_state.results_by_mode = {}
     for widget_key in ("inspect_chunk", "embed_view", "retrieval_view"):
         st.session_state.pop(widget_key, None)
     tmp_dir = tempfile.mkdtemp(prefix="rag_upload_")
@@ -166,7 +253,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             mark(flow_placeholder, "index", "done")
             status.update(label="Indexing complete", state="complete")
 
-        per_file = {}
+        per_file, file_texts = {}, {}
         for d in docs:
             name = os.path.basename(d.metadata.get("source", "unknown"))
             info = per_file.setdefault(name, {"pieces": 0, "chars": 0, "preview": ""})
@@ -174,6 +261,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             info["chars"] += len(d.page_content)
             if not info["preview"] and d.page_content.strip():
                 info["preview"] = d.page_content.strip()[:600]
+            file_texts.setdefault(name, []).append(d.page_content)
 
         overlap_example = None
         for i in range(len(texts) - 1):
@@ -200,13 +288,24 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             "chunk_overlap": chunk_overlap,
             "truncated_from": truncated_from,
             "overlap_example": overlap_example,
+            # for the alternative modes: an outline per file (vectorless) and a TF-IDF index (keyword search)
+            "outline": modes.build_outline([(name, "\n\n".join(parts)) for name, parts in file_texts.items()]),
+            "keyword_index": modes.KeywordIndex(texts),
         }
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     st.rerun()
 
 
-def run_query(question: str, top_k: int, min_similarity: float, compare: bool, api_key: str, flow_placeholder):
+def store_result(mode: str, out: dict):
+    st.session_state.results_by_mode[mode] = out
+    if out.get("answer"):
+        st.session_state.history.append({"mode": mode, "question": out["question"], "answer": out["answer"]})
+
+
+def run_query(question: str, top_k: int, min_similarity: float, compare: bool, judge: bool, mode: str,
+              api_key: str, flow_placeholder):
+    """Classic RAG (also the first part of RAG evaluation), run step by step to light up the big flowchart."""
     ix = st.session_state.index_data
     store = ix["store"]
     rag = RAGSearch(vectorstore=store, google_api_key=api_key)
@@ -215,7 +314,7 @@ def run_query(question: str, top_k: int, min_similarity: float, compare: bool, a
     lq = {"question": question, "answer": None, "error": None, "min_similarity": min_similarity,
           "compare": compare, "plain_answer": None, "plain_error": None}
 
-    with st.status("Running the query stage…", expanded=True) as status:
+    with st.status(f"Running {mode}…", expanded=True) as status:
         mark(flow_placeholder, "question", "done")
 
         st.write("Step 7 · Turning your question into numbers…")
@@ -262,18 +361,67 @@ def run_query(question: str, top_k: int, min_similarity: float, compare: bool, a
                     lq["plain_answer"] = rag.answer_without_context(question)
                 except Exception as e:  # the RAG answer still stands; show why the comparison is missing
                     lq["plain_error"] = friendly_error(e)
+            if judge:
+                modes.add_quality_scores(rag, question, lq, progress=st.write)
             status.update(label="Answer ready" if lq["answer"] else "Gemini call failed",
                           state="complete" if lq["answer"] else "error")
 
-    st.session_state.last_query = lq
-    if lq["answer"]:
-        st.session_state.history.append(
-            {"question": question, "answer": lq["answer"], "score": lq["grounding"]["score"]})
+    store_result(mode, lq)
+    st.rerun()
+
+
+def run_engine(mode: str, rag, ix, question: str, settings: dict, progress):
+    if mode == modes.MODE_CLASSIC:
+        return modes.run_classic(rag, question, settings["top_k"], settings["min_similarity"], progress)
+    if mode == modes.MODE_AGENTIC:
+        return modes.run_agentic(rag, question, ix["files"], settings["top_k"], settings["min_similarity"], progress)
+    if mode == modes.MODE_VECTORLESS:
+        return modes.run_vectorless(rag, question, ix["outline"], progress)
+    return modes.run_keyword(rag, question, ix["keyword_index"], ix["texts"], ix["sources"], settings["top_k"],
+                             settings["min_similarity"], progress)
+
+
+def run_mode(mode: str, question: str, settings: dict, judge: bool, api_key: str, flow_placeholder):
+    """Agentic, vectorless and keyword modes. They don't light up the big (classic) flowchart."""
+    ix = st.session_state.index_data
+    rag = RAGSearch(vectorstore=ix["store"], google_api_key=api_key)
+    for step_id in QUERY_STEP_IDS:
+        st.session_state.flow_status.pop(step_id, None)
+    redraw_flow(flow_placeholder)
+    with st.status(f"Running {mode}…", expanded=True) as status:
+        out = run_engine(mode, rag, ix, question, settings, progress=st.write)
+        if judge:
+            modes.add_quality_scores(rag, question, out, progress=st.write)
+        status.update(label="Answer ready" if out.get("answer") else "Finished with a problem",
+                      state="complete" if out.get("answer") else "error")
+    out["question"] = question
+    store_result(mode, out)
+    st.rerun()
+
+
+def run_compare(question: str, selected: list, settings: dict, api_key: str, flow_placeholder):
+    ix = st.session_state.index_data
+    rag = RAGSearch(vectorstore=ix["store"], google_api_key=api_key)
+    for step_id in QUERY_STEP_IDS:
+        st.session_state.flow_status.pop(step_id, None)
+    redraw_flow(flow_placeholder)
+    runs = {}
+    with st.status("Running the question through each mode…", expanded=True) as status:
+        for mode in selected:
+            st.write(f"**{mode}**")
+            out = run_engine(mode, rag, ix, question, settings, progress=st.write)
+            modes.add_quality_scores(rag, question, out, progress=st.write)
+            out["question"] = question
+            runs[mode] = out
+        failed = [m for m, r in runs.items() if not r.get("answer")]
+        status.update(label="All modes answered" if not failed else f"Finished; {len(failed)} mode(s) had a problem",
+                      state="complete" if not failed else "error")
+    st.session_state.results_by_mode[modes.MODE_COMPARE] = {"question": question, "runs": runs}
     st.rerun()
 
 
 # --------------------------------------------------------------------------
-# Step sections
+# Indexing stage sections (steps 2 to 5)
 # --------------------------------------------------------------------------
 
 def render_load(ix):
@@ -441,6 +589,10 @@ def render_index(ix):
     ])
 
 
+# --------------------------------------------------------------------------
+# Classic RAG sections (steps 7 to 10) and RAG evaluation (step 11)
+# --------------------------------------------------------------------------
+
 def render_embed_question(lq):
     step_header(7, "Embed the question", "query",
                 "Your question goes through the same embedding model as the chunks, so it also becomes a list "
@@ -501,7 +653,7 @@ def render_prompt(lq):
         st.code(lq["prompt"], language="text")
 
 
-def render_generate(lq):
+def render_generate(lq, show_scores: bool):
     step_header(10, "Generate the answer", "query",
                 "Gemini reads the prompt and writes an answer. It was told to use only the context, so the answer "
                 "should come from your documents, not from general knowledge. Citations like [#1] point to the "
@@ -549,13 +701,267 @@ def render_generate(lq):
         "It does not prove the answer is correct, and Gemini does not report its own confidence. For anything "
         "important, check the answer against the chunks in step 8.",
     ])
+    if show_scores:
+        render_quality_scores(lq)
+
+
+def render_judge(lq):
+    step_header(11, "Judge the answer", "query",
+                "Gemini is called a second time, now as a judge. It gets the question, the retrieved chunks and the "
+                "answer, and scores the answer on four measures from 1 (poor) to 5 (excellent), each with a "
+                "one-line reason.")
+    term("LLM-as-a-judge", "using an AI language model to grade an AI answer, so many answers can be checked "
+         "automatically.", "query")
+    if lq.get("error"):
+        st.caption("There is no answer to grade.")
+        return
+    render_quality_scores(lq)
+    note("Reading the scores", [
+        "<b>Correct</b> and <b>Grounded</b> are checked against the retrieved chunks only, not against the full "
+        "documents or the outside world.",
+        "A model grading an AI answer tends to be generous. Use the scores to spot problems, such as a low "
+        "<b>Chunks relevant</b> score that points to a retrieval problem, not as proof that an answer is right.",
+    ])
+
+
+# --------------------------------------------------------------------------
+# Agentic RAG sections
+# --------------------------------------------------------------------------
+
+def render_agentic_decision(out):
+    step_header(7, "Decide whether to search the documents", "query",
+                "Before any search, Gemini answers one routing question: does this question need information from "
+                "your documents, or can it be answered directly? The path this question took is highlighted.")
+    term("Router", "a step that chooses which path a question takes. Here the router is a single Gemini call.", "query")
+    route = out.get("route")
+    st.markdown(agentic_flow_svg(None if route is None else route["needs_retrieval"]), unsafe_allow_html=True)
+    if route is None:
+        st.error(out["error"])
+        return
+    if route["needs_retrieval"]:
+        st.success(f"**Decision: search the documents.** {route['reason']}", icon="📚")
+    else:
+        st.info(f"**Decision: answer directly, without searching.** {route['reason']}", icon="💬")
+    with st.expander("The router's raw reply"):
+        st.code(route["raw"], language="text")
+
+
+def render_agentic_retrieval(out):
+    step_header(8, "Retrieve chunks, only if the router said so", "query",
+                "When the router decides the documents are needed, this step works exactly like classic RAG: vector "
+                "search finds the closest chunks, and weak matches are left out.")
+    route = out.get("route")
+    if route is None:
+        st.caption("Not reached, because the routing step failed.")
+    elif not route["needs_retrieval"]:
+        st.info("Skipped. No search ran and no chunks were used for this question.")
+    else:
+        st.html(hits_html(out["results"], out["dropped"], out["min_similarity"]))
+
+
+def render_agentic_answer(out):
+    step_header(9, "Answer", "query",
+                "Gemini answers from the retrieved chunks, or directly from its general knowledge if the router "
+                "skipped the search. A direct answer can't cite your documents, so its grounding is weaker by design.")
+    if out.get("route") is None:
+        st.caption("Not reached, because the routing step failed.")
+        return
+    render_prompt_expander(out)
+    render_answer(out)
+
+
+# --------------------------------------------------------------------------
+# Vectorless RAG sections
+# --------------------------------------------------------------------------
+
+def render_outline(ix, out):
+    outline = ix["outline"]
+    sections = outline["sections"]
+    step_header(7, "Build the outline", "query",
+                "The app turns your documents into a short outline, like a table of contents, with one line per "
+                "section. It uses headings when the text has them (such as '2. Results' or '## Results'); otherwise "
+                "it uses the first sentence of each paragraph. This runs on your computer, when you indexed.")
+    term("Outline", "a list of section titles that shows where things are in a document, without the full text.", "query")
+    files = list(dict.fromkeys(s["source"] for s in sections))
+    with_headings = {s["source"] for s in sections if s["kind"] == "heading"}
+    c1, c2 = st.columns(2)
+    c1.metric("Sections in the outline", len(sections))
+    c2.metric("Files with headings", f"{len(with_headings)} of {len(files)}",
+              help="Files without headings are outlined by the first sentence of each paragraph.")
+    note("When this mode works well", [
+        "It works best on structured documents, such as reports or manuals with clear headings, because the outline "
+        "then describes what each section contains.",
+        "It works less well on plain text with no structure. The outline falls back to first sentences, which may "
+        "not reveal what a paragraph is really about, so Gemini can pick the wrong sections.",
+    ])
+    if outline["truncated"]:
+        st.warning(f"The outline is limited to the first {modes.MAX_SECTIONS} sections to keep the request small, "
+                   "so later sections can't be picked.")
+
+
+def render_section_pick(ix, out):
+    step_header(8, "Let Gemini pick sections", "query",
+                "Gemini reads only the outline, not the text, and names the sections most likely to contain the "
+                f"answer (at most {modes.MAX_PICKED_SECTIONS}).")
+    st.html('<div class="rag-callout">This mode skips embeddings and FAISS completely, and instead lets the AI read '
+            'a table of contents and choose where to look.</div>')
+    pick = out.get("pick")
+    if pick is None:
+        st.error(out["error"])
+    elif pick["picked"]:
+        # Name the titles here too: in a long outline the highlighted rows can sit below the fold.
+        titles = {s["id"]: s["title"] for s in ix["outline"]["sections"]}
+        picked = "; ".join(f"#{k + 1} {sid} ({titles[sid]})" for k, sid in enumerate(pick["picked"]))
+        st.success(f"**Gemini picked {picked}.** {pick['reason']}")
+    else:
+        st.warning(f"**Gemini picked no sections.** {pick['reason']}")
+    label("The full outline, with the picked sections highlighted in the order Gemini chose them")
+    st.html(outline_html(ix["outline"]["sections"], pick["picked"] if pick else []))
+    if pick:
+        with st.expander("Gemini's raw reply"):
+            st.code(pick["raw"], language="text")
+
+
+def render_vectorless_prompt(out):
+    step_header(9, "Build the prompt", "query",
+                "The full text of each picked section is pasted into the same kind of prompt classic RAG uses, "
+                "labeled #1, #2… in the order Gemini picked them.")
+    if not out.get("prompt"):
+        st.caption("No prompt was built, because no section was picked.")
+        return
+    st.html(prompt_html(out["prompt"], out["blocks"], out["question"]))
+    with st.expander("Raw prompt text (copyable)"):
+        st.code(out["prompt"], language="text")
+
+
+def render_vectorless_answer(out):
+    step_header(10, "Answer", "query",
+                "Gemini answers using only the picked sections. If it picked the wrong sections, the answer can "
+                "miss information that vector search would have found.")
+    render_answer(out)
+
+
+# --------------------------------------------------------------------------
+# Keyword vs. vector search sections
+# --------------------------------------------------------------------------
+
+def render_two_searches(out):
+    step_header(7, "Search two ways", "query",
+                "The same question searches the same chunks twice. Keyword search finds exact word matches, and "
+                "vector search finds similar meaning, even with different words.")
+    term("Keyword search (TF-IDF)", "gives a chunk a higher score when it contains words from your question, "
+         "especially words that are rare in your other chunks. It runs on your computer, with no search service.", "query")
+    both = {r["index"] for r in out["results"]} & {r["index"] for r in out["vector_results"]}
+    c1, c2 = st.columns(2, gap="large")
+    with c1:
+        label("Keyword search: exact words")
+        st.html(ranked_html(out["results"], ACTIVE_COLOR, "keyword score",
+                            "No chunk contains any word from the question.", both))
+    with c2:
+        label("Vector search: similar meaning")
+        st.html(ranked_html(out["vector_results"], QUERY_COLOR, "similarity", "No chunks were found.", both))
+    st.caption("Both scores run from 0 to 1, but they measure different things (shared words vs. shared meaning), "
+               "so compare the rankings rather than the numbers.")
+
+
+def render_search_differences(out):
+    step_header(8, "See where the two searches differ", "query",
+                "Chunks found by both searches are safe bets. Chunks found by only one show what each kind of search "
+                "is good at.")
+    keyword_ids = {r["index"] for r in out["results"]}
+    vector_ids = {r["index"] for r in out["vector_results"]}
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Found by both", len(keyword_ids & vector_ids))
+    c2.metric("Only keyword search", len(keyword_ids - vector_ids))
+    c3.metric("Only vector search", len(vector_ids - keyword_ids))
+    unknown = out["unknown_words"]
+    if not unknown:
+        st.caption("Every word in your question appears somewhere in your chunks, so there are no likely typos for "
+                   "keyword search to trip over. Try misspelling a word to see the difference.")
+        return
+    best = max((r["similarity"] for r in out["vector_results"]), default=0.0)
+    keyword_status = ("still found chunks through the question's other words, but the unknown words themselves can "
+                      "never match" if out["results"] else "found nothing, because no chunk contains any of the "
+                      "question's words")
+    vector_status = (f"still found chunks above the minimum similarity (best {best:.2f})"
+                     if best >= out["min_similarity"] else
+                     f"found no chunk above the minimum similarity (best {best:.2f})")
+    st.warning(
+        f"These words from your question appear in none of your chunks, which often means a typo: "
+        f"**{', '.join(unknown)}**.\n\n"
+        f"- **Keyword search** {keyword_status}.\n"
+        f"- **Vector search** {vector_status}. Embedding models split unfamiliar words into smaller pieces, so a "
+        "misspelled word often still lands near the right meaning."
+    )
+
+
+def render_keyword_answer(out):
+    step_header(9, "Answer from the keyword results", "query",
+                "Gemini answers using the chunks keyword search found, with the same prompt as classic RAG. To see "
+                "the answer built from vector search, switch to Classic RAG or use Compare modes.")
+    render_prompt_expander(out)
+    render_answer(out)
+
+
+# --------------------------------------------------------------------------
+# Compare modes sections
+# --------------------------------------------------------------------------
+
+def compare_note(mode: str, run: dict) -> str:
+    used = len(run.get("blocks") or [])
+    if mode == modes.MODE_AGENTIC:
+        route = run.get("route")
+        if route is None:
+            return "The router step failed."
+        return (f"Router chose to search: {used} chunk(s) sent." if route["needs_retrieval"]
+                else "Router chose to answer directly: no chunks used.")
+    if mode == modes.MODE_VECTORLESS:
+        picked = (run.get("pick") or {}).get("picked") or []
+        return f"Gemini picked outline sections: {', '.join(picked)}." if picked else "No outline sections picked."
+    if mode == modes.MODE_KEYWORD:
+        return f"Keyword search: {used} chunk(s) sent."
+    return f"Vector search: {used} chunk(s) sent."
+
+
+def render_compare_summary(out):
+    step_header(7, "Summary", "query",
+                "Every selected mode answered the same question. The grounded score comes from the judge, from 1 "
+                "(poor) to 5 (excellent).")
+    st.dataframe(pd.DataFrame([modes.summary_row(mode, run) for mode, run in out["runs"].items()]),
+                 width="stretch", hide_index=True)
+    st.caption("Question: " + out["question"])
+
+
+def render_compare_side_by_side(out):
+    runs = out["runs"]
+    step_header(8, "Answers side by side", "query",
+                "Each column shows one mode's answer, what it used to write the answer, and its quality scores.")
+    for column, (mode, run) in zip(st.columns(len(runs), gap="medium"), runs.items()):
+        with column:
+            label(html.escape(mode))
+            st.caption(compare_note(mode, run))
+            if run.get("error"):
+                st.error(run["error"])
+            else:
+                with st.container(border=True):
+                    st.markdown(run["answer"])
+            with st.expander(f"What it used ({len(run.get('blocks') or [])})"):
+                if mode == modes.MODE_VECTORLESS:
+                    for section in run.get("sections_used", []):
+                        st.markdown(f"**{section['id']}** · {section['title']}")
+                    if not run.get("sections_used"):
+                        st.caption("Nothing.")
+                else:
+                    st.html(ranked_html(run.get("results", []), QUERY_COLOR if mode != modes.MODE_KEYWORD else ACTIVE_COLOR,
+                                        "keyword score" if mode == modes.MODE_KEYWORD else "similarity", "Nothing."))
+            render_quality_scores(run)
 
 
 # --------------------------------------------------------------------------
 # Page
 # --------------------------------------------------------------------------
 
-DEFAULTS = {"index_data": None, "last_query": None, "history": [], "flow_status": {}}
+DEFAULTS = {"index_data": None, "results_by_mode": {}, "history": [], "flow_status": {}}
 for key, value in DEFAULTS.items():
     st.session_state.setdefault(key, copy.deepcopy(value))
 
@@ -582,13 +988,15 @@ with st.sidebar:
                                     "out loosely related text; lower it if relevant chunks are being left out.")
     st.divider()
     st.caption(f"Limits that keep this free and fast: up to {config.MAX_FILES} files, {config.MAX_TOTAL_MB} MB "
-               f"total, {config.MAX_CHUNKS} chunks. Embeddings run locally; only step 10 calls Gemini "
-               "(a second time if you turn on the comparison).")
+               f"total, {config.MAX_CHUNKS} chunks. Embeddings, FAISS and keyword search run on your computer; "
+               "only Gemini calls leave it.")
     if st.button("Reset and start over", icon="🔄", width="stretch"):
         for key, value in DEFAULTS.items():
             st.session_state[key] = copy.deepcopy(value)
         st.session_state.pop("inspect_chunk", None)
         st.rerun()
+
+settings = {"top_k": top_k, "min_similarity": min_similarity}
 
 st.title("🔍 RAG Pipeline Explorer")
 st.html(
@@ -596,16 +1004,17 @@ st.html(
     'about <i>your</i> documents. First, the app prepares your documents so they can be searched: the '
     f'<b style="color:{INDEX_COLOR}">indexing stage</b>. Then, for each question, it finds the most relevant '
     f'passages and gives only those to the AI model to write an answer: the <b style="color:{QUERY_COLOR}">query '
-    'stage</b>. Every step below shows exactly what happened to your data.</div>'
+    'stage</b>. Every step below shows exactly what happened to your data, and the query stage lets you try '
+    'several RAG designs.</div>'
 )
 
 st.subheader("The pipeline at a glance")
 flow_placeholder = st.empty()
-flow_placeholder.markdown(build_flow_svg(st.session_state.flow_status), unsafe_allow_html=True)
+redraw_flow(flow_placeholder)
 st.html(FLOW_LEGEND)
+st.caption("This diagram shows Classic RAG. The other modes in the query stage explain their own steps.")
 
 ix = st.session_state.index_data
-lq = st.session_state.last_query
 
 stage_banner("index", "Indexing stage", "Runs once per upload. It turns your files into a searchable index. Steps 1 to 5.")
 
@@ -636,33 +1045,82 @@ else:
         with st.container(border=True):
             render(ix)
 
-stage_banner("query", "Query stage", "Runs once per question. It finds the relevant chunks and asks Gemini to answer. Steps 6 to 10.")
+stage_banner("query", "Query stage", "Runs once per question. Pick a RAG mode, ask a question, and follow that "
+             "mode's numbered steps.")
 
 if not ix:
     st.info("The query stage searches the index built above, so run indexing first.")
 else:
     with st.container(border=True):
-        step_header(6, "Ask a question", "query",
-                    "Type a question about your documents. Steps 7 to 10 then run automatically, and each one "
-                    "shows its result below.")
+        step_header(6, "Choose a RAG mode and ask a question", "query",
+                    "Each mode answers from the same indexed documents in a different way. Classic RAG is the "
+                    "baseline; the others show designs used in real systems, rebuilt here with free tools only.")
+        mode = st.radio("RAG mode", modes.MODES, index=0, horizontal=True, key="rag_mode",
+                        help="Each mode keeps its own last result, so you can switch back and forth.")
+        mode_intro(mode)
+        st.caption("Agentic RAG, Vectorless RAG and quality scores (always on in RAG evaluation and Compare modes) "
+                   "make extra Gemini calls, so those answers take longer and use more of the free quota.")
         with st.form("ask_form", border=False):
             question = st.text_input("Your question", placeholder="For example: What is the main idea of this document?")
-            compare = st.checkbox("Also ask Gemini without my documents, to compare the two answers",
-                                  help="Shows what the model says with no retrieval at all. Uses a second free "
-                                       "API request per question.")
+            with_without, judge, selected = False, True, []
+            if mode == modes.MODE_COMPARE:
+                selected = st.multiselect("Modes to compare", modes.COMPARABLE_MODES,
+                                          default=[modes.MODE_CLASSIC, modes.MODE_VECTORLESS], key="compare_modes",
+                                          help="Each mode runs the full question and is graded by the judge.")
+                st.caption("Uses 2 to 3 Gemini requests per selected mode, including its quality scores.")
+            elif mode == modes.MODE_EVALUATION:
+                st.caption(f"Quality scores are always on in this mode. Uses "
+                           f"{modes.estimated_gemini_requests(mode)} Gemini requests per question.")
+            else:
+                if mode == modes.MODE_CLASSIC:
+                    with_without = st.checkbox("Also ask Gemini without my documents, to compare the two answers",
+                                               help="Shows what the model says with no retrieval at all. Uses one "
+                                                    "extra Gemini request.")
+                judge = st.toggle("Show quality scores",
+                                  help="After the answer, Gemini grades it on correctness, relevance, grounding and "
+                                       "whether the chunks were useful. Uses one extra Gemini request.")
+                base = modes.estimated_gemini_requests(mode)
+                st.caption(f"Uses {base} Gemini request{'s' if base > 1 else ''} per question, plus 1 if quality "
+                           "scores are on.")
             asked = st.form_submit_button("Ask", type="primary", icon="🤖", disabled=not api_key)
         if not api_key:
             st.caption("Asking is disabled until a GOOGLE_API_KEY is set in .env.")
-        if asked and question.strip():
-            run_query(question.strip(), top_k, min_similarity, compare, api_key, flow_placeholder)
+        if asked:
+            q = question.strip()
+            if not q:
+                st.warning("Type a question first.")
+            elif mode == modes.MODE_COMPARE and len(selected) < 2:
+                st.warning("Pick at least two modes to compare.")
+            elif mode in (modes.MODE_CLASSIC, modes.MODE_EVALUATION):
+                run_query(q, top_k, min_similarity, with_without, judge, mode, api_key, flow_placeholder)
+            elif mode == modes.MODE_COMPARE:
+                run_compare(q, selected, settings, api_key, flow_placeholder)
+            else:
+                run_mode(mode, q, settings, judge, api_key, flow_placeholder)
 
-    if lq:
-        for render in (render_embed_question, lambda q: render_retrieve(ix, q), render_prompt, render_generate):
+    result = st.session_state.results_by_mode.get(mode)
+    if result:
+        if mode == modes.MODE_CLASSIC:
+            cards = [render_embed_question, lambda r: render_retrieve(ix, r), render_prompt,
+                     lambda r: render_generate(r, show_scores=True)]
+        elif mode == modes.MODE_EVALUATION:
+            cards = [render_embed_question, lambda r: render_retrieve(ix, r), render_prompt,
+                     lambda r: render_generate(r, show_scores=False), render_judge]
+        elif mode == modes.MODE_AGENTIC:
+            cards = [render_agentic_decision, render_agentic_retrieval, render_agentic_answer]
+        elif mode == modes.MODE_VECTORLESS:
+            cards = [lambda r: render_outline(ix, r), lambda r: render_section_pick(ix, r),
+                     render_vectorless_prompt, render_vectorless_answer]
+        elif mode == modes.MODE_KEYWORD:
+            cards = [render_two_searches, render_search_differences, render_keyword_answer]
+        else:
+            cards = [render_compare_summary, render_compare_side_by_side]
+        for card in cards:
             with st.container(border=True):
-                render(lq)
+                card(result)
 
     if len(st.session_state.history) > 1:
         st.subheader("Earlier questions")
         for item in reversed(st.session_state.history[:-1]):
-            with st.expander(f"{item['question']} · grounding score {item['score'] * 100:.0f}%"):
+            with st.expander(f"{item['mode']} · {item['question']}"):
                 st.markdown(item["answer"])

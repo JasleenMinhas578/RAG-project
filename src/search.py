@@ -29,6 +29,11 @@ Question: {question}
 
 Answer:"""
 
+def prompt_from_blocks(blocks, question: str) -> str:
+    """Wrap labeled context blocks and the question in the standard prompt template."""
+    return PROMPT_TEMPLATE.format(context="\n\n".join(blocks), question=question)
+
+
 _BRACKETED = re.compile(r"\[([^\[\]]*)\]")
 _CHUNK_NUMBER = re.compile(r"#(\d+)")
 
@@ -67,6 +72,10 @@ def friendly_error(exc: Exception) -> str:
     """Turn a Gemini API failure into a message a non-developer can act on."""
     text = str(exc)
     if isinstance(exc, GoogleRateLimitError) or "429" in text or "RESOURCE_EXHAUSTED" in text:
+        if "PerDay" in text:
+            return ("You've reached today's free-tier limit for this Gemini model (the free tier allows only a "
+                    "small number of requests per day, per model). Try again tomorrow, or set DEFAULT_GEMINI_MODEL "
+                    "in src/config.py to another model, which has its own daily limit.")
         return ("Gemini's free-tier limit was reached. Wait about a minute, then ask again. "
                 "The free tier allows only a limited number of requests per minute and per day.")
     if isinstance(exc, (GoogleAuthenticationError, GooglePermissionDeniedError)) or "API_KEY_INVALID" in text:
@@ -125,7 +134,7 @@ class RAGSearch:
         blocks = self.context_blocks(results)
         if not blocks:
             return None
-        return PROMPT_TEMPLATE.format(context="\n\n".join(blocks), question=query)
+        return prompt_from_blocks(blocks, query)
 
     def generate_answer(self, prompt: str) -> str:
         """Step: send the assembled prompt to Gemini and return its answer as plain text.
