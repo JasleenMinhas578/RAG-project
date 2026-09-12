@@ -17,6 +17,7 @@ DEFAULT_CHUNK_OVERLAP = 200
 
 # Embedding
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+VECTOR_PREVIEW_DIMS = 12  # how many numbers of a vector the app prints as a sample
 
 # Retrieval / generation
 DEFAULT_TOP_K = 4

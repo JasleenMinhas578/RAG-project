@@ -56,12 +56,14 @@ class FaissVectorStore:
     def search(self, query_embedding: np.ndarray, top_k: int = 5):
         D, I = self.index.search(query_embedding, top_k)
         results = []
+        query_vec = query_embedding[0]
+        query_norm = np.linalg.norm(query_vec)
         for idx, dist in zip(I[0], D[0]):
             if idx == -1:
                 continue
             meta = self.metadata[idx] if idx < len(self.metadata) else None
-            # L2 distance -> a 0-1 "similarity" that's easier for a reader to interpret
-            similarity = float(1 / (1 + dist))
+            stored_vec = self.index.reconstruct(int(idx))
+            similarity = float(np.dot(query_vec, stored_vec) / (query_norm * np.linalg.norm(stored_vec) + 1e-12))
             results.append({"index": int(idx), "distance": float(dist), "similarity": similarity, "metadata": meta})
         return results
 

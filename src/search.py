@@ -10,6 +10,7 @@ load_dotenv()
 
 PROMPT_TEMPLATE = """You are a helpful assistant answering questions using only the provided context.
 If the answer isn't in the context, say you don't know instead of guessing.
+When you use information from a chunk, cite it by its number, like [#1].
 
 Context:
 {context}
@@ -53,13 +54,21 @@ class RAGSearch:
         """Step: embed the query and fetch the top_k nearest chunks."""
         return self.vectorstore.query(query, top_k=top_k)
 
+    def context_blocks(self, results) -> list:
+        """Label each retrieved chunk with its rank and source, so both the model and a
+        reader can refer to "chunk #2" consistently."""
+        return [
+            f"[Chunk #{rank} | source: {r['metadata'].get('source', 'unknown')}]\n{r['metadata'].get('text', '')}"
+            for rank, r in enumerate(results, start=1)
+            if r["metadata"]
+        ]
+
     def build_prompt(self, query: str, results) -> str:
         """Step: assemble the retrieved chunks into the final prompt sent to the LLM."""
-        texts = [r["metadata"].get("text", "") for r in results if r["metadata"]]
-        context = "\n\n".join(texts)
-        if not context:
+        blocks = self.context_blocks(results)
+        if not blocks:
             return None
-        return PROMPT_TEMPLATE.format(context=context, question=query)
+        return PROMPT_TEMPLATE.format(context="\n\n".join(blocks), question=query)
 
     def generate_answer(self, prompt: str) -> str:
         """Step: send the assembled prompt to Gemini and return its answer as plain text.

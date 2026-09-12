@@ -73,7 +73,9 @@ Data flows through four collaborating modules, each independently testable/runna
    `<persist_dir>/metadata.pkl` for the CLI/disk-backed path; the web app instead uses `reset()`
    and rebuilds a fresh in-memory store per session (no persistence needed for a single-session
    demo). `query`/`search` return `{index, distance, similarity, metadata}` per hit — `similarity`
-   is `1/(1+distance)`, a friendlier 0–1 score derived from L2 distance for display purposes. The
+   is true cosine similarity, computed from the query vector and the stored vector reconstructed
+   from the index (FAISS itself ranks by L2 distance; for these unit-length embeddings the order is
+   the same). The
    embedding model used to build the index must match the one used to query it — nothing enforces
    this automatically.
 
@@ -92,10 +94,24 @@ hardcoding new values elsewhere.
 
 ## `streamlit_app.py`
 
-Single-file Streamlit app built directly on the `src/` modules (no separate API/backend layer).
-Session state (`st.session_state`) holds the processed `chunks`, `embeddings`, `vectorstore`, and
-a fitted `sklearn.decomposition.PCA` (used to project chunk/query embeddings to 2D for the scatter
-plot) across reruns, since Streamlit re-executes the whole script on every interaction. Two main
-flows: `run_pipeline()` (upload → index, rendered inside `st.status`) and `answer_question()`
-(retrieve → prompt → generate, also rendered inside `st.status`), both intentionally narrating each
-pipeline step to the UI rather than just returning a final result.
+Single-file Streamlit teaching app built directly on the `src/` modules (no separate backend). The
+page is ten numbered step sections split into an Indexing stage (blue, steps 1–5) and a Query stage
+(green, steps 6–10); the numbers match the flowchart.
+
+- **Run vs. render are separate.** `run_indexing()` and `run_query()` do the work (showing live
+  progress in `st.status` and lighting up the flowchart), save every intermediate result to
+  `st.session_state.index_data` / `last_query`, then call `st.rerun()`. The `render_*` functions
+  draw each step purely from that saved state. Keep it this way: anything rendered inside the run
+  functions disappears on the next widget interaction.
+- **Flowchart** is an inline SVG string from `build_flow_svg(status)`, shown with
+  `st.markdown(..., unsafe_allow_html=True)` — not `st.html`, whose sanitizer strips `<svg>` entirely
+  (verified on Streamlit 1.63). The SVG string must stay free of blank lines so markdown treats it as
+  one raw HTML block. The pulse on the active step and the hover tips are CSS in the `CSS` block
+  (injected once via `st.html`, which does keep `<style>`).
+  Rows are column-offset so step 8 sits right of step 5, which keeps every arrow left-to-right and
+  non-crossing; preserve that if steps are added.
+- **Rank colors link three views:** retrieved chunk #k uses `RANK_COLORS[k]` on the retrieval map,
+  in the ranked list, and in the colored prompt. `RAGSearch.context_blocks()` labels chunks
+  `[Chunk #k | source: …]`, and `prompt_html()` locates those exact blocks inside the real prompt
+  string, so the colored view always shows exactly the text sent to Gemini.
+- All document text is `html.escape`d before going into `st.html` or Plotly hover text.
