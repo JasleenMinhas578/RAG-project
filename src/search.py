@@ -1,12 +1,22 @@
+import logging
 import os
+import re
+
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai.chat_models import (
+    GoogleAuthenticationError,
+    GoogleModelNotFoundError,
+    GooglePermissionDeniedError,
+    GoogleRateLimitError,
+)
 
-from src.vectorstore import FaissVectorStore
-from src.data_loader import load_all_documents
 from src import config
+from src.data_loader import load_all_documents
+from src.vectorstore import FaissVectorStore
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 PROMPT_TEMPLATE = """You are a helpful assistant answering questions using only the provided context.
 If the answer isn't in the context, say you don't know instead of guessing.
@@ -18,6 +28,53 @@ Context:
 Question: {question}
 
 Answer:"""
+
+_BRACKETED = re.compile(r"\[([^\[\]]*)\]")
+_CHUNK_NUMBER = re.compile(r"#(\d+)")
+
+
+def filter_by_similarity(results, min_similarity: float):
+    """Split retrieved results into (kept, dropped) at the minimum cosine similarity."""
+    kept = [r for r in results if r["similarity"] >= min_similarity]
+    dropped = [r for r in results if r["similarity"] < min_similarity]
+    return kept, dropped
+
+
+def cited_ranks(answer: str, n_chunks: int) -> list:
+    """Chunk numbers an answer cites, like [#1] or [#1, #3], in order of first appearance."""
+    ranks = []
+    for group in _BRACKETED.findall(answer or ""):
+        for number in _CHUNK_NUMBER.findall(group):
+            rank = int(number)
+            if 1 <= rank <= n_chunks and rank not in ranks:
+                ranks.append(rank)
+    return ranks
+
+
+def grounding_score(answer: str, results) -> dict:
+    """Average similarity of the chunks the answer actually cites. If it cites none, fall
+    back to every chunk that was sent, so the score reflects what the answer was built from."""
+    if not results:
+        return {"score": 0.0, "basis": "none", "ranks": []}
+    ranks = cited_ranks(answer, len(results))
+    basis = "cited" if ranks else "sent"
+    used = ranks or list(range(1, len(results) + 1))
+    score = sum(results[rank - 1]["similarity"] for rank in used) / len(used)
+    return {"score": max(0.0, score), "basis": basis, "ranks": used}
+
+
+def friendly_error(exc: Exception) -> str:
+    """Turn a Gemini API failure into a message a non-developer can act on."""
+    text = str(exc)
+    if isinstance(exc, GoogleRateLimitError) or "429" in text or "RESOURCE_EXHAUSTED" in text:
+        return ("Gemini's free-tier limit was reached. Wait about a minute, then ask again. "
+                "The free tier allows only a limited number of requests per minute and per day.")
+    if isinstance(exc, (GoogleAuthenticationError, GooglePermissionDeniedError)) or "API_KEY_INVALID" in text:
+        return "Gemini rejected the API key. Check GOOGLE_API_KEY in your .env file, then restart the app."
+    if isinstance(exc, GoogleModelNotFoundError):
+        return (f"The Gemini model '{config.DEFAULT_GEMINI_MODEL}' is not available for this API key. "
+                "Change DEFAULT_GEMINI_MODEL in src/config.py.")
+    return f"Gemini API error: {text}"
 
 
 class RAGSearch:
@@ -41,14 +98,14 @@ class RAGSearch:
             faiss_path = os.path.join(persist_dir, "faiss.index")
             meta_path = os.path.join(persist_dir, "metadata.pkl")
             if not (os.path.exists(faiss_path) and os.path.exists(meta_path)):
-                docs = load_all_documents("data")
-                self.vectorstore.build_from_documents(docs)
+                self.vectorstore.build_from_documents(load_all_documents("data"))
             else:
                 self.vectorstore.load()
 
         api_key = google_api_key or os.getenv("GOOGLE_API_KEY")
-        self.llm = ChatGoogleGenerativeAI(model=llm_model, google_api_key=api_key)
-        print(f"[INFO] Gemini LLM initialized: {llm_model}")
+        self.llm = ChatGoogleGenerativeAI(model=llm_model, google_api_key=api_key,
+                                          max_retries=config.GEMINI_MAX_RETRIES)
+        logger.info("Gemini LLM initialized: %s", llm_model)
 
     def retrieve(self, query: str, top_k: int = config.DEFAULT_TOP_K):
         """Step: embed the query and fetch the top_k nearest chunks."""
@@ -80,6 +137,10 @@ class RAGSearch:
         response = self.llm.invoke(prompt)
         return self._extract_text(response.content)
 
+    def answer_without_context(self, question: str) -> str:
+        """Ask the bare question with no retrieved context, to compare against the RAG answer."""
+        return self.generate_answer(question)
+
     @staticmethod
     def _extract_text(content) -> str:
         if isinstance(content, str):
@@ -94,18 +155,17 @@ class RAGSearch:
             return "".join(parts)
         return str(content)
 
-    def search_and_summarize(self, query: str, top_k: int = config.DEFAULT_TOP_K) -> str:
-        """Convenience wrapper chaining retrieve -> build_prompt -> generate_answer."""
-        results = self.retrieve(query, top_k=top_k)
-        prompt = self.build_prompt(query, results)
+    def search_and_summarize(self, query: str, top_k: int = config.DEFAULT_TOP_K,
+                             min_similarity: float = config.DEFAULT_MIN_SIMILARITY) -> str:
+        """Convenience wrapper: retrieve -> drop weak matches -> build_prompt -> generate_answer."""
+        kept, _ = filter_by_similarity(self.retrieve(query, top_k=top_k), min_similarity)
+        prompt = self.build_prompt(query, kept)
         if prompt is None:
             return "No relevant documents found."
         return self.generate_answer(prompt)
 
 
-# Example usage
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     rag_search = RAGSearch()
-    query = "What is attention mechanism?"
-    summary = rag_search.search_and_summarize(query, top_k=3)
-    print("Summary:", summary)
+    print("Summary:", rag_search.search_and_summarize("What is attention mechanism?", top_k=3))

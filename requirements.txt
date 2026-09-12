@@ -1,15 +1,23 @@
-langchain
-langchain-core
-langchain-community
-langchain-text-splitters
-langchain-google-genai
-pypdf
-docx2txt
-unstructured
-openpyxl
-sentence-transformers
-faiss-cpu
-python-dotenv
-scikit-learn
-streamlit
-plotly
+# Tested with Python 3.14. Versions are pinned because unpinned installs broke this project
+# before (langchain moved its text splitter). Upgrade deliberately, then run `pytest`.
+langchain==1.4.0
+langchain-core==1.6.3
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+langchain-google-genai==4.4.0
+pypdf==6.18.1
+docx2txt==0.9
+unstructured==0.18.32
+openpyxl==3.1.5
+sentence-transformers==6.0.1
+faiss-cpu==1.15.0
+python-dotenv==1.2.3
+scikit-learn==1.9.1
+streamlit==1.63.0
+plotly==7.0.0
+numpy==2.5.3
+pandas==3.0.5
+
+# Pulled in by sentence-transformers; pinned because they change often and can break model loading.
+torch==2.14.0
+transformers==5.17.0

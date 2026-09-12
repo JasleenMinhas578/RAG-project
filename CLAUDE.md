@@ -15,13 +15,20 @@ RAG, Typesense search, LangGraph agentic RAG, basic document/PDF loading demos) 
 reference — they're independent of `src/` and of each other and are not wired into the app; don't
 assume changes to `src/` need to be reflected there or vice versa.
 
-There is no test suite or linter configured. The repo is a git repo with no remote configured yet.
-
 ## Running things
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt     # runtime deps (pinned) + pytest
+```
+
+`requirements.txt` pins exact versions, including the transitive `torch`/`transformers`, because
+unpinned installs broke this project before. Upgrade deliberately and run the tests.
+
+Tests (no network, no Gemini calls, no model download):
+```bash
+pytest                                            # whole suite
+pytest tests/test_search.py::test_cited_ranks     # one test
 ```
 
 Web app (the primary way to use this project):
@@ -38,7 +45,7 @@ python app.py
 ```
 
 Individual `src/` modules also have `if __name__ == "__main__"` examples; run them as modules
-(`python -m src.data_loader`, etc.) since they use `src.xxx`-style package-relative imports.
+(`python -m src.data_loader`, etc.) since they use `src.xxx`-style imports.
 
 ## Environment variables
 
@@ -51,70 +58,69 @@ sidebar only shows whether a key was found.
 
 ## Architecture of `src/`
 
-Data flows through four collaborating modules, each independently testable/runnable:
+The pipeline modules log through `logging.getLogger(__name__)`; nothing prints. `app.py` and the
+`__main__` blocks call `logging.basicConfig(level=INFO)`; the Streamlit app doesn't, so only
+warnings (such as a skipped file) reach its terminal.
 
 1. **`data_loader.load_all_documents(data_dir)`** — walks a directory recursively and loads every
-   supported file type (PDF, TXT, CSV, XLSX, DOCX, JSON) into LangChain `Document` objects via the
-   matching `langchain_community` loader, printing `[DEBUG]`/`[ERROR]` progress per file type.
-   Per-file load errors are caught and logged, not raised, so one bad file doesn't abort the whole
-   load. The Streamlit app writes uploaded files to a temp directory and calls this the same way
-   the CLI does — there's no separate "in-memory upload" code path.
+   supported file type via the `LOADERS` table. JSON uses a small custom loader: langchain's
+   `JSONLoader` requires a `jq_schema` and the `jq` package. A file that fails to parse is logged as
+   a warning and skipped. The Streamlit app writes uploads to a temp directory and calls this too.
 
-2. **`embedding.EmbeddingPipeline`** — splits `Document`s into chunks with
-   `RecursiveCharacterTextSplitter` (`chunk_documents`) and embeds chunk text with a
-   `SentenceTransformer` model (`embed_chunks`). Chunk size/overlap and embedding model name are
-   constructor params (see `src/config.py` for defaults). `embed_chunks` accepts an optional
-   `progress_callback(done, total)` so a UI can render live progress by batching the encode calls
-   instead of the default single blocking call — the Streamlit app relies on this.
+2. **`embedding`** — `get_embedding_model(name)` is an `lru_cache`d loader, so the
+   `SentenceTransformer` is loaded once per process and shared by every `EmbeddingPipeline`,
+   `FaissVectorStore`, and Streamlit session. Both classes expose `.model` as a lazy property, so
+   constructing them never loads a model (tests rely on this). `EmbeddingPipeline.chunk_documents`
+   uses `RecursiveCharacterTextSplitter`; `embed_chunks` accepts an optional
+   `progress_callback(done, total)` that the app uses for its progress bar.
 
-3. **`vectorstore.FaissVectorStore`** — owns a FAISS `IndexFlatL2` index plus a parallel
-   `metadata` list (chunk text/source per vector, indexed positionally). `build_from_documents`
-   drives an `EmbeddingPipeline` internally as an all-in-one convenience (chunk → embed → index →
-   save) used by the CLI path; the Streamlit app instead calls the granular steps
-   (`EmbeddingPipeline.chunk_documents`/`embed_chunks` then `add_embeddings`) directly so each
-   stage can be rendered separately. `save`/`load` persist to `<persist_dir>/faiss.index` +
-   `<persist_dir>/metadata.pkl` for the CLI/disk-backed path; the web app instead uses `reset()`
-   and rebuilds a fresh in-memory store per session (no persistence needed for a single-session
-   demo). `query`/`search` return `{index, distance, similarity, metadata}` per hit — `similarity`
-   is true cosine similarity, computed from the query vector and the stored vector reconstructed
-   from the index (FAISS itself ranks by L2 distance; for these unit-length embeddings the order is
-   the same). The
-   embedding model used to build the index must match the one used to query it — nothing enforces
-   this automatically.
+3. **`vectorstore.FaissVectorStore`** — a FAISS `IndexFlatL2` plus a parallel `metadata` list (chunk
+   text/source per vector, same order). `build_from_documents` (CLI path) chunks, embeds, indexes and
+   saves; the app calls the granular steps instead so each can be rendered. `save()` creates
+   `persist_dir` (construction doesn't). `search`/`query` return `{index, distance, similarity,
+   metadata}`; `similarity` is true cosine similarity computed from the vector reconstructed from the
+   index (FAISS ranks by L2 distance; for these unit-length embeddings the order is the same). The
+   embedding model used to query must match the one that built the index — nothing checks this.
 
-4. **`search.RAGSearch`** — the retrieval + generation entry point, deliberately split into
-   separate steps so a caller (the Streamlit app) can show each one: `retrieve(query, top_k)` →
-   `build_prompt(query, results)` → `generate_answer(prompt)`, with `search_and_summarize` as a
-   convenience wrapper chaining all three (used by `app.py`). Can either build/load its own
-   `FaissVectorStore` from a `persist_dir`/`data/` directory (CLI path) or accept an already-built
-   `vectorstore` instance (web app path, since the app's index is built from uploaded files, not
-   disk). Uses `ChatGoogleGenerativeAI` (`langchain-google-genai`) as the LLM.
+4. **`search`** — `RAGSearch` splits retrieval and generation into visible steps:
+   `retrieve` → `filter_by_similarity` (module function; returns `(kept, dropped)`) →
+   `context_blocks`/`build_prompt` → `generate_answer`. `search_and_summarize` chains them for the CLI.
+   Other module functions: `cited_ranks` parses `[#1]`/`[#1, #3]` citations; `grounding_score`
+   averages the similarity of the cited chunks, falling back to all chunks sent; `friendly_error`
+   maps Gemini exceptions (rate limit, bad key, retired model) to plain messages.
+   `answer_without_context` powers the app's with/without comparison. The LLM is
+   `ChatGoogleGenerativeAI` with `max_retries=config.GEMINI_MAX_RETRIES` — the SDK default of 6 makes a
+   rate-limited request hang for a long time.
 
-`src/config.py` centralizes limits/defaults (`MAX_FILES`, `MAX_TOTAL_MB`, `MAX_CHUNKS`,
-chunk size/overlap, `DEFAULT_TOP_K`, `DEFAULT_GEMINI_MODEL`) — these exist to keep the demo fast
-and within Gemini free-tier limits, not for correctness reasons. Change them here rather than
-hardcoding new values elsewhere.
+5. **`visuals`** — everything the app draws that doesn't need Streamlit: colors, the `CSS` block, the
+   flowchart SVG (`build_flow_svg`), HTML snippets (`chips_html`, `hits_html`, `prompt_html`), and the
+   Plotly figures. Keep new rendering logic here so it stays unit-testable.
+
+`src/config.py` centralizes limits/defaults (upload limits, chunk size 500/overlap 100, top_k,
+`DEFAULT_MIN_SIMILARITY`, model names, retries). They exist to keep the demo fast and within Gemini
+free-tier limits. Change them there rather than hardcoding values elsewhere.
 
 ## `streamlit_app.py`
 
-Single-file Streamlit teaching app built directly on the `src/` modules (no separate backend). The
-page is ten numbered step sections split into an Indexing stage (blue, steps 1–5) and a Query stage
-(green, steps 6–10); the numbers match the flowchart.
+Streamlit teaching app built directly on `src/` (no separate backend). The page is ten numbered step
+sections split into an Indexing stage (blue, steps 1–5) and a Query stage (green, steps 6–10); the
+numbers match the flowchart.
 
 - **Run vs. render are separate.** `run_indexing()` and `run_query()` do the work (showing live
   progress in `st.status` and lighting up the flowchart), save every intermediate result to
   `st.session_state.index_data` / `last_query`, then call `st.rerun()`. The `render_*` functions
   draw each step purely from that saved state. Keep it this way: anything rendered inside the run
   functions disappears on the next widget interaction.
-- **Flowchart** is an inline SVG string from `build_flow_svg(status)`, shown with
-  `st.markdown(..., unsafe_allow_html=True)` — not `st.html`, whose sanitizer strips `<svg>` entirely
-  (verified on Streamlit 1.63). The SVG string must stay free of blank lines so markdown treats it as
-  one raw HTML block. The pulse on the active step and the hover tips are CSS in the `CSS` block
-  (injected once via `st.html`, which does keep `<style>`).
-  Rows are column-offset so step 8 sits right of step 5, which keeps every arrow left-to-right and
-  non-crossing; preserve that if steps are added.
-- **Rank colors link three views:** retrieved chunk #k uses `RANK_COLORS[k]` on the retrieval map,
-  in the ranked list, and in the colored prompt. `RAGSearch.context_blocks()` labels chunks
-  `[Chunk #k | source: …]`, and `prompt_html()` locates those exact blocks inside the real prompt
-  string, so the colored view always shows exactly the text sent to Gemini.
+- **Flowchart** is shown with `st.markdown(..., unsafe_allow_html=True)` — not `st.html`, whose
+  sanitizer strips `<svg>` entirely (verified on Streamlit 1.63). The SVG string must stay free of
+  blank lines so markdown treats it as one raw HTML block (a test checks this). The pulse on the
+  active step and the hover tips are CSS in the `CSS` block (injected via `st.html`, which keeps
+  `<style>`). Rows are column-offset so step 8 sits right of step 5, which keeps every arrow
+  left-to-right and non-crossing; preserve that if steps are added.
+- **Rank colors link three views:** chunk #k sent to Gemini uses `RANK_COLORS[k]` on the retrieval
+  map, in the ranked list, and in the colored prompt. Chunks below the minimum similarity are shown
+  gray and hollow, listed separately, and never get a rank number. `prompt_html()` locates the exact
+  `context_blocks` inside the real prompt string, so the colored view always shows exactly the text
+  sent to Gemini (a test checks this).
+- The with/without comparison is opt-in because it costs a second free-tier request per question.
 - All document text is `html.escape`d before going into `st.html` or Plotly hover text.

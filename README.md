@@ -1,60 +1,294 @@
-# RAG Pipeline Explorer
+# 🔍 RAG Pipeline Explorer
 
-A small, modular Retrieval-Augmented Generation (RAG) pipeline, plus a Streamlit web app that
-walks you through every step live: **upload → load & parse → chunk → embed → index → retrieve →
-prompt → generate**.
+An interactive, step-by-step visual guide to **Retrieval-Augmented Generation (RAG)**. Upload your
+own documents, ask questions about them, and watch every stage of the pipeline happen live, from
+raw files to a cited answer.
 
-- Embeddings run **locally** via `sentence-transformers` (`all-MiniLM-L6-v2`) — free, no API needed.
-- Retrieval uses a local **FAISS** index — free, no external service.
-- The final answer is generated with **Google Gemini's free API tier**.
+Most RAG demos hide the pipeline behind a single "Ask" button. This one shows every intermediate
+result: the parsed text, the chunk boundaries, the embedding vectors, the FAISS index, which chunks
+were retrieved and why, and the exact prompt sent to the model.
 
-## Setup
+Everything runs on **free tiers**:
+
+| Component | Tool | Cost |
+|---|---|---|
+| Embeddings | [`sentence-transformers`](https://www.sbert.net/) (`all-MiniLM-L6-v2`), runs locally on CPU | Free |
+| Vector store | [FAISS](https://github.com/facebookresearch/faiss), in memory / on local disk | Free |
+| Answer generation | [Google Gemini](https://ai.google.dev/) (`gemini-flash-latest`) | Free API tier |
+| Orchestration | [LangChain](https://www.langchain.com/) loaders and text splitters | Free |
+| UI | [Streamlit](https://streamlit.io/) + [Plotly](https://plotly.com/python/) | Free |
+
+---
+
+## What is RAG?
+
+An LLM only knows what it was trained on. RAG lets it answer questions about **your** documents
+without retraining. It works in two stages:
+
+1. **Indexing (once per upload):** split your documents into small chunks, turn each chunk into an
+   embedding (a vector of numbers that captures its meaning), and store those vectors in a
+   searchable index.
+2. **Querying (once per question):** embed the question the same way, find the chunks whose vectors
+   are closest to it, and give only those chunks to the LLM as context for its answer.
+
+The answer is grounded in your text, and the model is told to say "I don't know" when the answer
+isn't in the retrieved chunks.
+
+## The 10 steps the app visualizes
+
+```mermaid
+flowchart LR
+    subgraph Indexing["Indexing stage (once per upload)"]
+        A[1. Upload<br/>documents] --> B[2. Load &<br/>parse] --> C[3. Split into<br/>chunks] --> D[4. Embed<br/>chunks] --> E[5. Store in<br/>FAISS index]
+    end
+    subgraph Query["Query stage (once per question)"]
+        F[6. Ask a<br/>question] --> G[7. Embed the<br/>question] --> H[8. Retrieve<br/>top chunks] --> I[9. Build the<br/>prompt] --> J[10. Generate<br/>answer]
+    end
+    E -.-> H
+```
+
+| # | Step | What you see in the app |
+|---|---|---|
+| 1 | **Upload documents** | Drag in up to 5 files (PDF, TXT, CSV, DOCX, XLSX, JSON) |
+| 2 | **Load & parse** | The plain text extracted from each file (e.g. one piece per PDF page) |
+| 3 | **Split into chunks** | Chunks per file, and the overlap between neighboring chunks highlighted |
+| 4 | **Embed chunks** | A chunk's 384-number embedding as numbers and as a bar chart, plus a 2D map (PCA) of every chunk |
+| 5 | **Store in FAISS** | What the index stores, row by row, and how it's organized |
+| 6 | **Ask a question** | A question box, with an option to also ask Gemini *without* your documents |
+| 7 | **Embed the question** | The question's embedding, made with the same model as the chunks |
+| 8 | **Retrieve top chunks** | Where the question and the retrieved chunks sit on the map, and a ranked list with cosine similarity scores. Chunks below the minimum similarity are shown but not sent |
+| 9 | **Build the prompt** | The exact prompt sent to Gemini, with each retrieved chunk color-coded to match its rank |
+| 10 | **Generate answer** | Gemini's answer with `[#1]`-style citations and a **grounding score**; optionally side by side with the no-documents answer |
+
+A live flowchart at the top of the page lights up each step as it runs. The same rank colors link
+the retrieval map, the ranked list, and the colored prompt, so you can follow any chunk from the
+map to the prompt and into the answer.
+
+**Minimum similarity:** retrieved chunks scoring below this threshold (default 0.25) are not sent to
+Gemini, so loosely related text doesn't dilute the prompt. If nothing passes, the app says so instead
+of asking Gemini to answer from nothing.
+
+**Grounding score:** the average cosine similarity between your question and the chunks the answer
+actually cites (or every chunk sent, if the answer cites none). A low score is a hint that your
+documents may not contain a good answer. It is not a measure of factual correctness.
+
+**With vs. without your documents:** tick the comparison box to see the same question answered by
+Gemini with no retrieved context. The difference between the two answers is the point of RAG.
+
+---
+
+## Getting started
+
+### Prerequisites
+
+- Python 3 (developed and tested on Python 3.14)
+- A free Google Gemini API key from **https://aistudio.google.com/apikey** (no credit card needed)
+
+### 1. Clone and install
 
 ```bash
+git clone https://github.com/JasleenMinhas578/RAG-project.git
+cd RAG-project
+
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Get a free Gemini API key at https://aistudio.google.com/apikey and put it in a `.env` file (or
-export it as an environment variable). The app never shows the key on screen — the sidebar only
-says whether one was found:
+Dependency versions in `requirements.txt` are pinned to a set that is known to work together.
+
+### 2. Add your API key
+
+Create a file named `.env` in the project root:
 
 ```bash
-cp .env.example .env
-# then edit .env and set GOOGLE_API_KEY=...
+GOOGLE_API_KEY=your_key_here
 ```
 
-## Run the web app
+`.env` is listed in `.gitignore`, so your key is never committed. The app reads the key from `.env`
+only and never shows it in the browser. The sidebar just tells you whether a key was found.
+
+### 3. Run the web app
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-Upload up to 5 documents (PDF, TXT, CSV, DOCX, XLSX or JSON, 10 MB total — kept small so the demo
-stays fast and free), click **Run pipeline**, then ask a question. Each stage of the pipeline
-renders its own output as it runs, including a 2D projection of the chunk embeddings and, when you
-ask a question, exactly which chunks were retrieved and the full prompt sent to Gemini.
+Streamlit opens the app at http://localhost:8501. Then:
 
-## Run the CLI example
+1. Upload one or more documents and click **Run indexing**.
+2. Explore steps 2–5 as they appear.
+3. Type a question and click **Ask** to see steps 7–10.
+4. Try changing **chunk size**, **chunk overlap**, **top_k** and **minimum similarity** in the
+   sidebar and re-running to see how they affect retrieval.
+5. Tick **Also ask Gemini without my documents** to compare a RAG answer with the model's
+   general-knowledge answer.
+
+> **First run:** the embedding model (about 90 MB) downloads from Hugging Face the first time you
+> index something. Later runs use the cached copy, and the app loads it into memory only once.
+
+---
+
+## Command-line example
+
+`app.py` runs the same pipeline without the UI. It loads every supported file from a `data/`
+folder, builds a FAISS index (saved to `faiss_store/` and reused on later runs), and prints an
+answer to a sample question:
 
 ```bash
+mkdir -p data          # put your documents in here
 python app.py
 ```
 
-Loads documents from a `data/` directory, builds/loads a FAISS index in `faiss_store/`, and prints
-an answer to a sample query.
+Each module in `src/` also has its own runnable example:
 
-## Project layout
+```bash
+python -m src.data_loader
+python -m src.embedding
+python -m src.vectorstore
+python -m src.search
+```
 
-- `src/data_loader.py` — loads PDF/TXT/CSV/XLSX/DOCX/JSON files into LangChain `Document`s.
-- `src/embedding.py` — splits documents into chunks and embeds them.
-- `src/vectorstore.py` — FAISS index wrapper (build, save/load, query).
-- `src/search.py` — retrieval + prompt construction + Gemini generation (`RAGSearch`).
-- `src/config.py` — limits and defaults tuned for free-tier usage.
-- `streamlit_app.py` — the interactive pipeline-visualization web app.
-- `app.py` — minimal CLI example using the same pipeline.
-- `archive/` — earlier tutorial notebooks (LangSmith evaluation, PageIndex vectorless RAG,
-  Typesense search, LangGraph agentic RAG) kept for reference; not part of the app.
+---
 
-See `CLAUDE.md` for more architecture detail.
+## Using the pipeline in your own code
+
+The modules in `src/` are independent of the web app, and each step can be called on its own:
+
+```python
+from src.data_loader import load_all_documents
+from src.embedding import EmbeddingPipeline
+from src.vectorstore import FaissVectorStore
+from src.search import RAGSearch, filter_by_similarity
+
+docs = load_all_documents("data")                     # files -> LangChain Documents
+
+pipeline = EmbeddingPipeline(chunk_size=500, chunk_overlap=100)
+chunks = pipeline.chunk_documents(docs)               # Documents -> chunks
+embeddings = pipeline.embed_chunks(chunks)            # chunks -> vectors
+
+store = FaissVectorStore()
+store.add_embeddings(
+    embeddings.astype("float32"),                     # FAISS expects float32
+    [{"text": c.page_content, "source": c.metadata.get("source", "unknown")} for c in chunks],
+)
+
+rag = RAGSearch(vectorstore=store)                    # reads GOOGLE_API_KEY from the environment
+results = rag.retrieve("What is this document about?", top_k=4)
+kept, dropped = filter_by_similarity(results, 0.25)   # leave out weak matches
+prompt = rag.build_prompt("What is this document about?", kept)
+print(rag.generate_answer(prompt))
+```
+
+`rag.search_and_summarize(query)` chains retrieval, the similarity filter, prompt building and
+generation into one call.
+
+The modules log with Python's `logging` module instead of printing. Call
+`logging.basicConfig(level=logging.INFO)` to see what each step is doing.
+
+---
+
+## Project structure
+
+```
+RAG-project/
+├── streamlit_app.py        # Interactive web app that visualizes all 10 pipeline steps
+├── app.py                  # Minimal CLI example using the same pipeline
+├── src/
+│   ├── config.py           # Limits and defaults (file/chunk limits, chunk size, top_k, thresholds, model names)
+│   ├── data_loader.py      # Loads PDF/TXT/CSV/XLSX/DOCX/JSON into LangChain Documents
+│   ├── embedding.py        # Chunking + local embeddings (the model is loaded once and shared)
+│   ├── vectorstore.py      # FAISS index wrapper: add, search, save/load
+│   ├── search.py           # RAGSearch: retrieve → filter → build prompt → generate; grounding score
+│   └── visuals.py          # App rendering helpers: flowchart SVG, HTML snippets, Plotly figures
+├── tests/                  # pytest suite
+├── .streamlit/config.toml  # Streamlit settings (file watcher off, telemetry off)
+├── archive/                # Earlier standalone tutorial notebooks (not used by the app)
+├── requirements.txt        # Pinned runtime dependencies
+├── requirements-dev.txt    # Runtime dependencies + pytest
+├── pytest.ini
+└── CLAUDE.md               # Detailed architecture notes
+```
+
+### How the modules fit together
+
+```mermaid
+flowchart LR
+    DL[data_loader.py<br/>files → Documents] --> EP[embedding.py<br/>chunk + embed]
+    EP --> VS[vectorstore.py<br/>FAISS index]
+    VS --> RS[search.py<br/>retrieve → prompt → Gemini]
+    CFG[config.py] -.defaults.-> EP & VS & RS
+```
+
+---
+
+## Configuration
+
+All limits and defaults live in [`src/config.py`](src/config.py):
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `MAX_FILES` | `5` | Max files per upload |
+| `MAX_TOTAL_MB` | `10` | Max total upload size |
+| `MAX_CHUNKS` | `500` | Max chunks to embed (keeps CPU embedding fast) |
+| `DEFAULT_CHUNK_SIZE` | `500` | Characters per chunk |
+| `DEFAULT_CHUNK_OVERLAP` | `100` | Characters shared between neighboring chunks |
+| `DEFAULT_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Local sentence-transformers model (384 dimensions) |
+| `VECTOR_PREVIEW_DIMS` | `12` | How many numbers of a vector the app prints as a sample |
+| `DEFAULT_TOP_K` | `4` | Chunks retrieved per question |
+| `DEFAULT_MIN_SIMILARITY` | `0.25` | Retrieved chunks below this cosine similarity are not sent to Gemini |
+| `DEFAULT_GEMINI_MODEL` | `gemini-flash-latest` | Gemini model; the `-latest` alias survives model retirements |
+| `GEMINI_MAX_RETRIES` | `2` | Attempts before a Gemini error is shown (the SDK default of 6 makes quota errors hang) |
+
+These limits keep the demo fast on a laptop and within Gemini's free-tier quota. Each question
+costs one Gemini call, or two if you turn on the with/without-documents comparison.
+
+> If you change the embedding model, rebuild the index. Queries must be embedded with the same
+> model that built the index, and nothing checks this automatically.
+
+---
+
+## Running the tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The tests cover the pipeline logic (cosine similarity, chunking, the similarity filter, citation
+parsing and the grounding score, error messages), the rendering helpers (the prompt view shows
+exactly the text sent to Gemini, and document text is escaped), and a smoke test that the app page
+renders. They don't call the Gemini API and don't download the embedding model.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Sidebar says **No GOOGLE_API_KEY found** | Create `.env` with `GOOGLE_API_KEY=...` in the project root, then restart Streamlit |
+| Code changes don't show up in the app | Hot reload is off on purpose (see below). Stop and rerun `streamlit run streamlit_app.py` |
+| Gemini returns a model-not-found error | Google retired the model. Set `DEFAULT_GEMINI_MODEL` in `src/config.py` to a current model |
+| **Gemini's free-tier limit was reached** | Wait about a minute and ask again. Turning off the comparison halves the requests per question |
+| **None of the retrieved chunks reached the minimum similarity** | Rephrase the question, or lower **Minimum similarity** in the sidebar |
+| A file fails to load | It's skipped with a warning in the terminal, so the other files still load |
+
+**Why hot reload is off:** `.streamlit/config.toml` sets `fileWatcherType = "none"`. With the
+watcher on, Streamlit scans the `transformers` package and floods the terminal with harmless
+`No module named 'torchvision'` tracebacks.
+
+---
+
+## The `archive/` folder
+
+Earlier standalone tutorial notebooks, kept for reference. They are independent of `src/` and of
+each other, and aren't used by the app:
+
+- LangSmith RAG evaluation
+- PageIndex "vectorless" RAG
+- Typesense search
+- LangGraph agentic RAG
+- Basic LangChain document and PDF loading
+
+Some notebooks use other services (OpenAI, Groq, LangSmith, PageIndex, Typesense) and expect their
+own API keys in environment variables.
