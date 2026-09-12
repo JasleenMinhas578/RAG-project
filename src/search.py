@@ -62,9 +62,28 @@ class RAGSearch:
         return PROMPT_TEMPLATE.format(context=context, question=query)
 
     def generate_answer(self, prompt: str) -> str:
-        """Step: send the assembled prompt to Gemini and return its answer."""
+        """Step: send the assembled prompt to Gemini and return its answer as plain text.
+
+        Newer Gemini models return `response.content` as a list of content blocks
+        (e.g. [{"type": "text", "text": "...", "extras": {...}}]) rather than a plain
+        string, so this normalizes either shape into a single string.
+        """
         response = self.llm.invoke(prompt)
-        return response.content
+        return self._extract_text(response.content)
+
+    @staticmethod
+    def _extract_text(content) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+            return "".join(parts)
+        return str(content)
 
     def search_and_summarize(self, query: str, top_k: int = config.DEFAULT_TOP_K) -> str:
         """Convenience wrapper chaining retrieve -> build_prompt -> generate_answer."""

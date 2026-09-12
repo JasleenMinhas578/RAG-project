@@ -20,4 +20,7 @@ DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # Retrieval / generation
 DEFAULT_TOP_K = 4
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+# "-latest" alias tracks whichever current flash model Google points it at, so this
+# default doesn't need to be updated every time a specific version gets deprecated
+# (gemini-2.0-flash and gemini-2.5-flash were both retired during development of this app).
+DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
