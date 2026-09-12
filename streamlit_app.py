@@ -48,17 +48,18 @@ FLOW_NODES = [
     {"id": "index", "label": "Build FAISS<br>index", "x": 4, "y": 1, "phase": "index",
      "desc": "All chunk vectors are stored in a FAISS index for fast similarity search."},
 
-    {"id": "question", "label": "Ask a<br>question", "x": 1, "y": 0, "phase": "query",
+    # x=2..6 here (not 1..5) so "retrieve" lines up directly under "index" — see FLOW_EDGES.
+    {"id": "question", "label": "Ask a<br>question", "x": 2, "y": 0, "phase": "query",
      "desc": "You type a natural-language question about the uploaded documents."},
-    {"id": "embed_q", "label": "Embed<br>question", "x": 2, "y": 0, "phase": "query",
+    {"id": "embed_q", "label": "Embed<br>question", "x": 3, "y": 0, "phase": "query",
      "desc": "The question is embedded with the same model used for the chunks, so both live in "
              "the same vector space and can be compared."},
-    {"id": "retrieve", "label": "Retrieve<br>top-k", "x": 3, "y": 0, "phase": "query",
+    {"id": "retrieve", "label": "Retrieve<br>top-k", "x": 4, "y": 0, "phase": "query",
      "desc": "FAISS finds the chunks whose vectors are closest to the question's vector — the "
              "most relevant pieces of your documents."},
-    {"id": "prompt", "label": "Build<br>prompt", "x": 4, "y": 0, "phase": "query",
+    {"id": "prompt", "label": "Build<br>prompt", "x": 5, "y": 0, "phase": "query",
      "desc": "The retrieved chunks are inserted into a prompt template together with your question."},
-    {"id": "generate", "label": "Generate<br>answer", "x": 5, "y": 0, "phase": "query",
+    {"id": "generate", "label": "Generate<br>answer", "x": 6, "y": 0, "phase": "query",
      "desc": "The prompt is sent to Google Gemini (free tier), which reads the context and writes "
              "an answer grounded in your documents."},
 ]
@@ -66,49 +67,70 @@ FLOW_NODES = [
 FLOW_EDGES = [
     ("upload", "load"), ("load", "chunk"), ("chunk", "embed_docs"), ("embed_docs", "index"),
     ("question", "embed_q"), ("embed_q", "retrieve"), ("retrieve", "prompt"), ("prompt", "generate"),
-    ("index", "retrieve"),  # the index built above feeds retrieval below
+    ("index", "retrieve"),  # the index built above feeds retrieval below (straight down, x=4)
 ]
 
 PHASE_COLOR = {"index": "#2563EB", "query": "#16A34A"}
-PENDING_COLOR = "#B0B7C3"
+PENDING_COLOR = "#475569"
 ACTIVE_COLOR = "#D97706"
+BOX_HALF_W = 0.42
+BOX_HALF_H = 0.35
 
 
 def build_flowchart(status: dict):
     node_by_id = {n["id"]: n for n in FLOW_NODES}
     fig = go.Figure()
 
+    # 1) Box shapes, drawn with their exact data-space footprint so arrows below can be
+    #    trimmed to stop precisely at each edge instead of cutting through the box.
+    for n in FLOW_NODES:
+        state = status.get(n["id"], "pending")
+        color = ACTIVE_COLOR if state == "active" else PHASE_COLOR[n["phase"]] if state == "done" else PENDING_COLOR
+        fig.add_shape(
+            type="rect",
+            x0=n["x"] - BOX_HALF_W, x1=n["x"] + BOX_HALF_W,
+            y0=n["y"] - BOX_HALF_H, y1=n["y"] + BOX_HALF_H,
+            fillcolor=color, line={"color": "white", "width": 2},
+        )
+
+    # 2) Arrows trimmed to the gap between boxes (Plotly always draws annotations, arrows
+    #    included, above shapes — so a full center-to-center arrow would cut through box text).
     for src, dst in FLOW_EDGES:
         a, b = node_by_id[src], node_by_id[dst]
+        if a["y"] == b["y"]:
+            sign = 1 if b["x"] > a["x"] else -1
+            x0, x1 = a["x"] + sign * BOX_HALF_W, b["x"] - sign * BOX_HALF_W
+            y0 = y1 = a["y"]
+        else:
+            sign = 1 if b["y"] > a["y"] else -1
+            y0, y1 = a["y"] + sign * BOX_HALF_H, b["y"] - sign * BOX_HALF_H
+            x0 = x1 = a["x"]
         fig.add_annotation(
-            x=b["x"], y=b["y"], ax=a["x"], ay=a["y"], xref="x", yref="y", axref="x", ayref="y",
+            x=x1, y=y1, ax=x0, ay=y0, xref="x", yref="y", axref="x", ayref="y",
             showarrow=True, arrowhead=3, arrowsize=1, arrowwidth=1.5, arrowcolor="#9AA0A6",
         )
 
-    colors = []
-    for n in FLOW_NODES:
-        state = status.get(n["id"], "pending")
-        if state == "active":
-            colors.append(ACTIVE_COLOR)
-        elif state == "done":
-            colors.append(PHASE_COLOR[n["phase"]])
-        else:
-            colors.append(PENDING_COLOR)
-
+    # 3) An invisible marker per box (for hover tooltips) plus the visible text label on top.
     fig.add_trace(go.Scatter(
         x=[n["x"] for n in FLOW_NODES], y=[n["y"] for n in FLOW_NODES],
-        mode="markers+text",
-        marker={"size": 95, "symbol": "square", "color": colors, "line": {"width": 2, "color": "white"}},
-        text=[n["label"] for n in FLOW_NODES], textposition="middle center",
-        textfont={"size": 11, "color": "white"},
+        mode="markers",
+        marker={"size": 90, "symbol": "square", "opacity": 0.001},
         hovertext=[n["desc"] for n in FLOW_NODES], hoverinfo="text",
         showlegend=False,
     ))
-    fig.add_annotation(x=-0.55, y=1, text="indexing<br>(once per upload)", showarrow=False,
-                        font={"size": 10, "color": "#2563EB"}, xanchor="right")
-    fig.add_annotation(x=-0.55, y=0, text="query<br>(once per question)", showarrow=False,
-                        font={"size": 10, "color": "#16A34A"}, xanchor="right")
-    fig.update_xaxes(visible=False, range=[-1.3, 5.6])
+    for n in FLOW_NODES:
+        fig.add_annotation(x=n["x"], y=n["y"], text=n["label"], showarrow=False,
+                            font={"size": 12, "color": "white"})
+
+    index_row_x0 = min(n["x"] for n in FLOW_NODES if n["phase"] == "index")
+    query_row_x0 = min(n["x"] for n in FLOW_NODES if n["phase"] == "query")
+    fig.add_annotation(x=index_row_x0 - 0.55, y=1, text="<b>INDEXING</b><br>once per upload", showarrow=False,
+                        font={"size": 11, "color": PHASE_COLOR["index"]}, xanchor="right", align="right")
+    fig.add_annotation(x=query_row_x0 - 0.55, y=0, text="<b>QUERY</b><br>once per question", showarrow=False,
+                        font={"size": 11, "color": PHASE_COLOR["query"]}, xanchor="right", align="right")
+
+    max_x = max(n["x"] for n in FLOW_NODES)
+    fig.update_xaxes(visible=False, range=[index_row_x0 - 1.6, max_x + 0.6])
     fig.update_yaxes(visible=False, range=[-0.6, 1.6])
     fig.update_layout(
         height=250, margin={"l": 10, "r": 10, "t": 10, "b": 10},
@@ -433,6 +455,7 @@ flow_placeholder.plotly_chart(
     build_flowchart(st.session_state.flow_status), use_container_width=True,
     config={"displayModeBar": False}, key="flow_initial",
 )
+st.caption("⬛ not run yet · 🟧 running now · 🟦 indexing step done · 🟩 query step done")
 st.markdown(
     "- **Indexing** *(runs once, whenever you upload/reprocess documents)* — "
     "`Upload → Load & parse → Split into chunks → Embed chunks → Store in FAISS vector database`\n"
@@ -445,11 +468,17 @@ st.markdown(
 
 with st.sidebar:
     st.header("Settings")
-    api_key = st.text_input(
-        "Google API key (Gemini)", type="password", value=os.getenv("GOOGLE_API_KEY", ""),
-        help="Free key from https://aistudio.google.com/apikey. Only used to call Gemini for the "
-             "final answer — never shown on screen or logged.",
-    )
+    # The key is read only from .env / the environment and never rendered in the browser at
+    # all (not even behind a "show" toggle) — there's nothing on screen to leak.
+    api_key = os.getenv("GOOGLE_API_KEY", "")
+    if api_key:
+        st.success("✅ Gemini API key loaded from .env", icon="🔑")
+    else:
+        st.error(
+            "No GOOGLE_API_KEY found. Copy `.env.example` to `.env`, add your free key from "
+            "https://aistudio.google.com/apikey, then restart the app.",
+            icon="🔑",
+        )
     chunk_size = st.slider(
         "Chunk size (characters)", 200, 2000, config.DEFAULT_CHUNK_SIZE, step=100,
         help="How long each retrieval chunk is. Smaller chunks are more precise but may lose "

@@ -16,9 +16,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Get a free Gemini API key at https://aistudio.google.com/apikey. Either export it as an
-environment variable, put it in a `.env` file (see `.env.example`), or paste it into the app's
-sidebar at runtime:
+Get a free Gemini API key at https://aistudio.google.com/apikey and put it in a `.env` file (or
+export it as an environment variable). The app never shows the key on screen — the sidebar only
+says whether one was found:
 
 ```bash
 cp .env.example .env

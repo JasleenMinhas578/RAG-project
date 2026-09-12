@@ -40,8 +40,10 @@ Individual `src/` modules also have `if __name__ == "__main__"` examples; run th
 ## Environment variables
 
 Only one key is needed: `GOOGLE_API_KEY` (a free Gemini key from
-https://aistudio.google.com/apikey), loaded from a `.env` file via `python-dotenv` or entered
-directly into the Streamlit sidebar at runtime — the sidebar value takes precedence when set.
+https://aistudio.google.com/apikey), loaded from a `.env` file via `python-dotenv`. The Streamlit
+app deliberately has no key input field — the user explicitly does not want the key rendered in the
+browser in any form (not even a masked password field with a reveal toggle). Keep it that way; the
+sidebar only shows whether a key was found.
 `src/search.py`'s `RAGSearch` falls back to `os.getenv("GOOGLE_API_KEY")` when no key is passed in.
 
 ## Architecture of `src/`
