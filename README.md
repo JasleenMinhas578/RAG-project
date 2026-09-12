@@ -52,11 +52,11 @@ flowchart LR
 | 1 | **Upload documents** | Drag in up to 5 files (PDF, TXT, CSV, DOCX, XLSX, JSON) |
 | 2 | **Load & parse** | The plain text extracted from each file (e.g. one piece per PDF page) |
 | 3 | **Split into chunks** | Chunks per file, and the overlap between neighboring chunks highlighted |
-| 4 | **Embed chunks** | A chunk's 384-number embedding as numbers and as a bar chart, plus a 2D map (PCA) of every chunk |
+| 4 | **Embed chunks** | A chunk's 384-number embedding as numbers and as a bar chart, plus three ways to see which chunks are close in meaning: a 2D map, a rotatable 3D map (both PCA, with the share of variance each keeps), or a plain nearest-neighbors list |
 | 5 | **Store in FAISS** | What the index stores, row by row, and how it's organized |
 | 6 | **Ask a question** | A question box, with an option to also ask Gemini *without* your documents |
 | 7 | **Embed the question** | The question's embedding, made with the same model as the chunks |
-| 8 | **Retrieve top chunks** | Where the question and the retrieved chunks sit on the map, and a ranked list with cosine similarity scores. Chunks below the minimum similarity are shown but not sent |
+| 8 | **Retrieve top chunks** | Where the question and the retrieved chunks sit on the 2D or 3D map, and a ranked list with cosine similarity scores. Chunks below the minimum similarity are shown but not sent |
 | 9 | **Build the prompt** | The exact prompt sent to Gemini, with each retrieved chunk color-coded to match its rank |
 | 10 | **Generate answer** | Gemini's answer with `[#1]`-style citations and a **grounding score**; optionally side by side with the no-documents answer |
 

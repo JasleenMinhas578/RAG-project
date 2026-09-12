@@ -2,14 +2,18 @@ import html
 import re
 
 import numpy as np
+import plotly.graph_objects as go
+import pytest
 
 from src.visuals import (
     FLOW_STEPS,
     build_flow_svg,
     chips_html,
+    chunk_map_figure,
     find_overlap,
     hits_html,
     hover_text,
+    neighbors_html,
     prompt_html,
     retrieval_map_figure,
 )
@@ -66,10 +70,45 @@ def test_hits_html_explains_when_nothing_passed_the_threshold():
     assert "No chunk reached the minimum similarity" in hits_html([], [hit(0, 0.1)], 0.25)
 
 
-def test_retrieval_map_draws_sent_dropped_and_question_points():
-    ix = {"coords": np.array([[0, 0], [1, 1], [2, 0]], dtype=float), "texts": ["a", "b", "c"], "sources": ["d.txt"] * 3}
-    lq = {"results": [hit(0, 0.8)], "dropped": [hit(2, 0.1)], "q_point": np.array([0.5, 0.5]),
-          "question": "q?", "min_similarity": 0.25}
-    names = [trace.name for trace in retrieval_map_figure(ix, lq).data]
+@pytest.fixture
+def ix():
+    coords3d = np.array([[0, 0, 0], [1, 1, 1], [2, 0, 1]], dtype=float)
+    return {"coords": coords3d[:, :2], "coords3d": coords3d, "texts": ["a", "<b>b</b>", "c"],
+            "sources": ["d.txt", "d.txt", "e.txt"]}
+
+
+@pytest.fixture
+def lq():
+    return {"results": [hit(0, 0.8)], "dropped": [hit(2, 0.1)], "q_point": np.array([0.5, 0.5]),
+            "q_point3d": np.array([0.5, 0.5, 0.5]), "question": "q?", "min_similarity": 0.25}
+
+
+@pytest.mark.parametrize("three_d, trace_type", [(False, go.Scatter), (True, go.Scatter3d)])
+def test_retrieval_map_draws_sent_dropped_and_question_points(ix, lq, three_d, trace_type):
+    fig = retrieval_map_figure(ix, lq, three_d=three_d)
+    names = [trace.name for trace in fig.data]
+    assert all(isinstance(trace, trace_type) for trace in fig.data)
     assert any(name and "not sent" in name for name in names)
     assert "your question" in names
+
+
+@pytest.mark.parametrize("three_d, trace_type", [(False, go.Scatter), (True, go.Scatter3d)])
+def test_chunk_map_marks_the_picked_chunk_in_both_views(ix, three_d, trace_type):
+    fig = chunk_map_figure(ix, selected=1, three_d=three_d)
+    assert all(isinstance(trace, trace_type) for trace in fig.data)
+    picked = [trace for trace in fig.data if trace.name == "chunk you picked"][0]
+    assert list(picked.x) == [1.0]
+    if three_d:
+        assert list(picked.z) == [1.0]
+    assert any("&lt;b&gt;b&lt;/b&gt;" in str(trace.customdata) for trace in fig.data)
+
+
+def test_neighbors_html_ranks_neighbors_with_chunk_numbers():
+    out = neighbors_html([hit(2, 0.7, "<i>close</i>"), hit(0, 0.3)], picked_number=2)
+    assert "closest in meaning to chunk 2" in out
+    assert "chunk 3 ·" in out and "chunk 1 ·" in out
+    assert "&lt;i&gt;close" in out
+
+
+def test_neighbors_html_handles_a_single_chunk():
+    assert "no other chunks" in neighbors_html([], picked_number=1)

@@ -35,6 +35,7 @@ from src.visuals import (
     chunk_map_figure,
     find_overlap,
     hits_html,
+    neighbors_html,
     prompt_html,
     retrieval_map_figure,
     vector_bar_figure,
@@ -82,6 +83,31 @@ def note(title: str, paragraphs: list):
     st.html(f'<div class="rag-note"><div class="h">{title}</div>{body}</div>')
 
 
+# Both maps default to the 2D view: it reads at a glance with no dragging, labels can't hide behind
+# other dots in depth, and it behaves the same on touch screens. 3D is one click away for
+# untangling dots that overlap in 2D.
+MAP_VIEWS = ("2D view", "3D view")
+
+
+def map_config(three_d: bool) -> dict:
+    # 3D keeps Plotly's toolbar for its "reset camera" button; 2D doesn't need it.
+    return {"displayModeBar": three_d, "displaylogo": False}
+
+
+def render_variance(ix):
+    variance = ix["variance"]
+    kept_2d = f"**2D map: {variance[1] * 100:.1f}%**"
+    if ix["coords3d"] is None:
+        st.caption(f"Variance explained (the share of the differences between chunks that the squeezed numbers "
+                   f"still capture): {kept_2d}. The map is still an approximation of the real "
+                   f"{ix['embeddings'].shape[1]}-number space.")
+        return
+    st.caption(f"Variance explained (the share of the differences between chunks that the squeezed numbers "
+               f"still capture): {kept_2d} · **3D map: {variance[2] * 100:.1f}%**. 3D keeps more of the original "
+               f"meaning than 2D, but both are still an approximation of the real "
+               f"{ix['embeddings'].shape[1]}-number space.")
+
+
 # --------------------------------------------------------------------------
 # Running the two stages (results are saved to session state, then the page reruns
 # and renders every step from that saved state, so nothing disappears on the next click)
@@ -90,7 +116,8 @@ def note(title: str, paragraphs: list):
 def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_placeholder):
     st.session_state.flow_status = {}
     st.session_state.last_query = None
-    st.session_state.pop("inspect_chunk", None)
+    for widget_key in ("inspect_chunk", "embed_view", "retrieval_view"):
+        st.session_state.pop(widget_key, None)
     tmp_dir = tempfile.mkdtemp(prefix="rag_upload_")
     try:
         with st.status("Running the indexing stage…", expanded=True) as status:
@@ -132,7 +159,10 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             sources = [os.path.basename(c.metadata.get("source", "unknown")) for c in chunks]
             store = FaissVectorStore(embedding_model=config.DEFAULT_EMBEDDING_MODEL)
             store.add_embeddings(embeddings, [{"text": t, "source": s} for t, s in zip(texts, sources)])
-            pca = PCA(n_components=2, random_state=42).fit(embeddings) if len(chunks) >= 2 else None
+            # One PCA with up to 3 components serves both maps: PCA components come in order of
+            # importance, so the 2D map is simply the first two of the three.
+            pca = PCA(n_components=min(3, len(chunks)), random_state=42).fit(embeddings) if len(chunks) >= 2 else None
+            projected = pca.transform(embeddings) if pca is not None else None
             mark(flow_placeholder, "index", "done")
             status.update(label="Indexing complete", state="complete")
 
@@ -162,7 +192,10 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             "embeddings": embeddings,
             "store": store,
             "pca": pca,
-            "coords": pca.transform(embeddings) if pca is not None else None,
+            "coords": projected[:, :2] if projected is not None else None,
+            "coords3d": projected if projected is not None and projected.shape[1] == 3 else None,
+            # cumulative share of variance kept: [1 component, 2 components, 3 components]
+            "variance": np.cumsum(pca.explained_variance_ratio_).tolist() if pca is not None else None,
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,
             "truncated_from": truncated_from,
@@ -188,7 +221,9 @@ def run_query(question: str, top_k: int, min_similarity: float, compare: bool, a
         st.write("Step 7 · Turning your question into numbers…")
         mark(flow_placeholder, "embed_q", "active")
         lq["q_vec"] = store.model.encode([question])[0]
-        lq["q_point"] = ix["pca"].transform([lq["q_vec"]])[0] if ix["pca"] is not None else None
+        projected_q = ix["pca"].transform([lq["q_vec"]])[0] if ix["pca"] is not None else None
+        lq["q_point"] = projected_q[:2] if projected_q is not None else None
+        lq["q_point3d"] = projected_q if ix["coords3d"] is not None else None
         mark(flow_placeholder, "embed_q", "done")
 
         st.write("Step 8 · Finding the closest chunks…")
@@ -341,20 +376,34 @@ def render_embed(ix):
                "The shaded area marks the numbers printed above. A different chunk gives a different pattern of bars.")
 
     if ix["coords"] is None:
-        st.info("Add more text to see the chunk map. It needs at least 2 chunks.")
+        st.info("Add more text to compare chunks. It needs at least 2 chunks.")
         return
+    label("How close in meaning are the chunks?")
+    views = [v for v in MAP_VIEWS if v == "2D view" or ix["coords3d"] is not None] + ["Nearest neighbors list"]
+    view = st.radio("Choose a view", views, index=0, horizontal=True, key="embed_view",
+                    help="All three views show the same idea, closeness in meaning, for the chunk you picked above.")
     m1, m2 = st.columns([2, 1], gap="large")
     with m1:
-        label("Every chunk on one map")
-        st.plotly_chart(chunk_map_figure(ix, selected), width="stretch", config={"displayModeBar": False})
+        if view == "Nearest neighbors list":
+            st.html(neighbors_html(ix["store"].neighbors(selected, k=5), selected + 1))
+            st.caption(f"The list compares all {dims} numbers directly, so nothing is lost the way it is in a map.")
+        else:
+            three_d = view == "3D view"
+            st.plotly_chart(chunk_map_figure(ix, selected, three_d=three_d), width="stretch",
+                            config=map_config(three_d))
+            render_variance(ix)
     with m2:
-        note("How to read this map", [
-            "An embedding is a list of numbers, and that list represents the meaning of the text.",
-            f"A screen cannot show {dims} dimensions, so the app squeezes each list down to 2 numbers "
-            "(using a method called PCA) and draws each chunk as one dot.",
-            "<b>Chunks with similar meaning end up close together.</b> Hover over any dot to read its chunk. "
-            "The ringed dot is the chunk you picked above.",
-            f"Squeezing {dims} numbers into 2 loses detail, so treat distances on this map as approximate.",
+        note("How to read these views", [
+            "An embedding is a list of numbers, and that list represents the meaning of the text. "
+            "<b>Chunks with similar meaning have similar lists.</b>",
+            f"<b>2D and 3D maps:</b> a screen cannot show {dims} dimensions, so the app squeezes each list down "
+            "to 2 or 3 numbers and draws each chunk as one dot. The squeeze uses <b>PCA</b> (principal component "
+            "analysis), a method that keeps the directions in which the chunks differ the most. Close dots mean "
+            "similar meaning. Hover over a dot to read its chunk; the ringed dot is the chunk you picked.",
+            "<b>3D map:</b> drag to rotate, scroll to zoom, and right-drag to pan. The third direction separates "
+            "dots that sit on top of each other in 2D.",
+            "<b>Nearest neighbors list:</b> no map at all. It ranks the 5 chunks most similar to the one you "
+            "picked. <b>Cosine similarity</b> is the score: near 1 means very similar meaning, near 0 means unrelated.",
         ])
 
 
@@ -418,11 +467,17 @@ def render_retrieve(ix, lq):
     with m1:
         label("Where the retrieved chunks sit on the map")
         if lq["q_point"] is not None:
-            st.plotly_chart(retrieval_map_figure(ix, lq), width="stretch", config={"displayModeBar": False})
-            st.caption("The star is your question. Dotted lines connect it to the chunks sent to Gemini, labeled "
-                       "#1 (closest) onward. Hollow gray circles were retrieved but scored too low to send. The "
-                       f"ranking uses all {ix['embeddings'].shape[1]} numbers, so on this flattened map a gray dot "
-                       "can look closer than a picked one.")
+            has_3d = lq.get("q_point3d") is not None
+            view = (st.radio("Map view", MAP_VIEWS, index=0, horizontal=True, key="retrieval_view",
+                             help="Same chunks, same colors. 3D can be rotated with the mouse.")
+                    if has_3d else "2D view")
+            three_d = view == "3D view"
+            st.plotly_chart(retrieval_map_figure(ix, lq, three_d=three_d), width="stretch", config=map_config(three_d))
+            st.caption(f"The {'green diamond' if three_d else 'star'} is your question. Dotted lines connect it to "
+                       "the chunks sent to Gemini, labeled #1 (closest) onward. Hollow gray circles were retrieved "
+                       f"but scored too low to send. The ranking uses all {ix['embeddings'].shape[1]} numbers, so "
+                       "on a squeezed map a gray dot can look closer than a picked one.")
+            render_variance(ix)
         else:
             st.info("The map needs at least 2 chunks.")
     with m2:

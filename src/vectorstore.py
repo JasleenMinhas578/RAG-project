@@ -82,6 +82,12 @@ class FaissVectorStore:
         query_emb = self.model.encode([query_text]).astype("float32")
         return self.search(query_emb, top_k=top_k)
 
+    def neighbors(self, position: int, k: int = 5):
+        """The k stored vectors most similar to the one at `position`, excluding that vector itself."""
+        vector = self.index.reconstruct(int(position)).reshape(1, -1)
+        hits = self.search(vector, top_k=min(k + 1, self.ntotal))
+        return [hit for hit in hits if hit["index"] != position][:k]
+
     @property
     def ntotal(self) -> int:
         return self.index.ntotal if self.index is not None else 0

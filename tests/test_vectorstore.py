@@ -47,6 +47,12 @@ def test_creating_a_store_does_not_create_its_directory(tmp_path):
     assert not (tmp_path / "unused").exists()
 
 
+def test_neighbors_ranks_other_chunks_and_excludes_the_chunk_itself(store):
+    neighbors = store.neighbors(0, k=5)
+    assert [n["metadata"]["text"] for n in neighbors] == ["diagonal", "y axis"]
+    assert neighbors[0]["similarity"] == pytest.approx(1 / np.sqrt(2), abs=1e-6)
+
+
 def test_reset_empties_the_store(store):
     store.reset()
     assert store.ntotal == 0

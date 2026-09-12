@@ -122,5 +122,10 @@ numbers match the flowchart.
   gray and hollow, listed separately, and never get a rank number. `prompt_html()` locates the exact
   `context_blocks` inside the real prompt string, so the colored view always shows exactly the text
   sent to Gemini (a test checks this).
+- **Chunk maps:** `run_indexing` fits one PCA with up to 3 components; `coords` is its first two columns
+  and `coords3d` all three (`None` with fewer than 3 chunks), and `variance` is the cumulative explained
+  variance. The 2D and 3D figures share one builder in `visuals.py` (`three_d=` flag) so colors, markers
+  and hover text can't drift apart. Step 4 also offers a nearest-neighbors list from
+  `FaissVectorStore.neighbors()`. Both maps default to 2D (reason in the `MAP_VIEWS` comment).
 - The with/without comparison is opt-in because it costs a second free-tier request per question.
 - All document text is `html.escape`d before going into `st.html` or Plotly hover text.

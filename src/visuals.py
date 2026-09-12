@@ -7,6 +7,7 @@ import html
 import math
 import textwrap
 
+import numpy as np
 import plotly.graph_objects as go
 
 from src import config
@@ -60,6 +61,7 @@ CSS = """
 .rag-hit .bar div {height:100%; border-radius:3px}
 .rag-hit .x {font-size:.88rem; opacity:.88; line-height:1.5; word-break:break-word}
 .rag-sub {font-weight:600; font-size:.9rem; margin:.9rem 0 .45rem; opacity:.85}
+.rag-sub:first-child {margin-top:.1rem}
 .rag-empty {font-size:.95rem; opacity:.8}
 .rag-rank {display:inline-block; min-width:2.2rem; text-align:center; color:#fff; font-weight:700;
   border-radius:6px; padding:0 .4rem; margin-right:.45rem}
@@ -239,13 +241,13 @@ def find_overlap(a: str, b: str, max_len: int = 600) -> int:
     return 0
 
 
-def _hit_card(result, color: str, badge: str, dropped: bool = False) -> str:
+def _hit_card(result, color: str, badge: str, dropped: bool = False, detail: str = "") -> str:
     sim = result["similarity"]
     text = " ".join(result["metadata"].get("text", "").split())
     return (
         f'<div class="rag-hit{" dropped" if dropped else ""}" style="border-left-color:{color}">'
         f'<div class="h"><span class="rag-rank" style="background:{color}">{badge}</span>'
-        f'<b>{sim:.2f}</b> similarity · {html.escape(result["metadata"].get("source", "unknown"))}</div>'
+        f'<b>{sim:.2f}</b> similarity · {detail}{html.escape(result["metadata"].get("source", "unknown"))}</div>'
         f'<div class="bar"><div style="width:{max(0.0, min(1.0, sim)) * 100:.0f}%;background:{color}"></div></div>'
         f'<div class="x">{html.escape(text[:260])}{"…" if len(text) > 260 else ""}</div></div>'
     )
@@ -259,6 +261,16 @@ def hits_html(kept, dropped, min_similarity: float) -> str:
     if dropped:
         cards.append(f'<div class="rag-sub">Retrieved but not sent: below the minimum similarity of {min_similarity:.2f}</div>')
         cards.extend(_hit_card(r, MUTED_COLOR, "×", dropped=True) for r in dropped)
+    return f'<div class="rag-hits">{"".join(cards)}</div>'
+
+
+def neighbors_html(neighbors, picked_number: int) -> str:
+    """Plain ranked list of the chunks most similar to the picked chunk (no map, no spatial reasoning)."""
+    if not neighbors:
+        return '<div class="rag-empty">There are no other chunks to compare this one with.</div>'
+    cards = [f'<div class="rag-sub">The {len(neighbors)} chunks closest in meaning to chunk {picked_number}</div>']
+    cards.extend(_hit_card(n, INDEX_COLOR, str(k + 1), detail=f"chunk {n['index'] + 1} · ")
+                 for k, n in enumerate(neighbors))
     return f'<div class="rag-hits">{"".join(cards)}</div>'
 
 
@@ -288,15 +300,6 @@ def prompt_html(prompt: str, blocks: list, question: str) -> str:
 # Plotly figures
 # --------------------------------------------------------------------------
 
-def style_map(fig, height=430):
-    fig.update_xaxes(showticklabels=False, zeroline=False, title=None)
-    fig.update_yaxes(showticklabels=False, zeroline=False, title=None)
-    fig.update_layout(height=height, margin={"l": 10, "r": 10, "t": 10, "b": 10},
-                      legend={"orientation": "h", "yanchor": "top", "y": -0.02, "x": 0},
-                      hoverlabel={"align": "left"})
-    return fig
-
-
 def vector_bar_figure(vector):
     fig = go.Figure(go.Bar(
         x=list(range(len(vector))), y=vector,
@@ -310,41 +313,82 @@ def vector_bar_figure(vector):
     return fig
 
 
-def chunk_map_figure(ix, selected):
-    coords, texts, sources = ix["coords"], ix["texts"], ix["sources"]
+# The 2D and 3D maps share one builder so they always use the same colors, markers and hover
+# text. Plotly's 3D scatter has no star or "transparent fill + outline" marker, so 3D uses a
+# diamond for the question and the "circle-open" symbol for rings.
+
+def _points(xyz, three_d: bool, **kwargs):
+    xyz = np.asarray(xyz, dtype=float)
+    if three_d:
+        return go.Scatter3d(x=xyz[:, 0], y=xyz[:, 1], z=xyz[:, 2], **kwargs)
+    return go.Scatter(x=xyz[:, 0], y=xyz[:, 1], **kwargs)
+
+
+def _dot(three_d: bool, size: float, color, opacity: float = 1.0, outline: str = "white"):
+    return {"size": size * 0.6 if three_d else size, "color": color, "opacity": opacity,
+            "line": {"width": 1 if three_d else 2, "color": outline}}
+
+
+def _ring(three_d: bool, size: float, color: str, width: float = 3):
+    if three_d:
+        return {"size": size * 0.6, "symbol": "circle-open", "color": color, "line": {"width": width, "color": color}}
+    return {"size": size, "color": "rgba(0,0,0,0)", "line": {"width": width, "color": color}}
+
+
+def style_map(fig, three_d: bool = False):
+    legend = {"orientation": "h", "yanchor": "top", "y": -0.02, "x": 0}
+    if three_d:
+        axis = {"showticklabels": False, "title": "", "showspikes": False}
+        fig.update_layout(
+            height=520, margin={"l": 0, "r": 0, "t": 0, "b": 0}, legend=legend, hoverlabel={"align": "left"},
+            scene={"xaxis": axis, "yaxis": axis, "zaxis": axis, "dragmode": "orbit", "aspectmode": "cube"},
+            uirevision="map-3d",  # keep the user's rotation when the page reruns
+        )
+        return fig
+    fig.update_xaxes(showticklabels=False, zeroline=False, title=None)
+    fig.update_yaxes(showticklabels=False, zeroline=False, title=None)
+    fig.update_layout(height=430, margin={"l": 10, "r": 10, "t": 10, "b": 10}, legend=legend,
+                      hoverlabel={"align": "left"})
+    return fig
+
+
+def chunk_map_figure(ix, selected: int, three_d: bool = False):
+    coords = ix["coords3d"] if three_d else ix["coords"]
+    texts, sources = ix["texts"], ix["sources"]
     fig = go.Figure()
     for k, src in enumerate(dict.fromkeys(sources)):
         ids = [i for i, s in enumerate(sources) if s == src]
-        fig.add_trace(go.Scatter(
-            x=coords[ids, 0], y=coords[ids, 1], mode="markers", name=src,
-            marker={"size": 10, "color": SOURCE_COLORS[k % len(SOURCE_COLORS)], "opacity": 0.85,
-                    "line": {"width": 1, "color": "white"}},
+        fig.add_trace(_points(
+            coords[ids], three_d, mode="markers", name=src,
+            marker=_dot(three_d, 10, SOURCE_COLORS[k % len(SOURCE_COLORS)], opacity=0.85),
             customdata=[[i + 1, html.escape(src), hover_text(texts[i])] for i in ids],
             hovertemplate="<b>Chunk %{customdata[0]}</b> · %{customdata[1]}<br><br>%{customdata[2]}<extra></extra>",
         ))
-    fig.add_trace(go.Scatter(
-        x=[coords[selected, 0]], y=[coords[selected, 1]], mode="markers+text", name="chunk you picked",
-        marker={"size": 24, "color": "rgba(0,0,0,0)", "line": {"width": 3, "color": ACTIVE_COLOR}},
-        text=[f"chunk {selected + 1}"], textposition="top center", hoverinfo="skip",
+    fig.add_trace(_points(
+        coords[[selected]], three_d, mode="markers+text", name="chunk you picked",
+        marker=_ring(three_d, 24, ACTIVE_COLOR), text=[f"chunk {selected + 1}"], textposition="top center",
+        hoverinfo="skip",
     ))
-    return style_map(fig)
+    return style_map(fig, three_d)
 
 
-def retrieval_map_figure(ix, lq):
-    coords, texts, sources = ix["coords"], ix["texts"], ix["sources"]
+def retrieval_map_figure(ix, lq, three_d: bool = False):
+    coords = ix["coords3d"] if three_d else ix["coords"]
+    question_point = lq["q_point3d"] if three_d else lq["q_point"]
+    texts, sources = ix["texts"], ix["sources"]
     results, dropped = lq["results"], lq.get("dropped", [])
-    qx, qy = lq["q_point"]
-    fig = go.Figure(go.Scatter(
-        x=coords[:, 0], y=coords[:, 1], mode="markers", name="chunks not retrieved",
-        marker={"size": 9, "color": MUTED_COLOR, "opacity": 0.45},
+
+    fig = go.Figure(_points(
+        coords, three_d, mode="markers", name="chunks not retrieved",
+        marker=_dot(three_d, 9, MUTED_COLOR, opacity=0.45, outline=MUTED_COLOR),
         customdata=[[i + 1, html.escape(sources[i]), hover_text(texts[i])] for i in range(len(texts))],
         hovertemplate="<b>Chunk %{customdata[0]}</b> · %{customdata[1]}<br><br>%{customdata[2]}<extra></extra>",
     ))
     if dropped:
-        fig.add_trace(go.Scatter(
-            x=[coords[r["index"], 0] for r in dropped], y=[coords[r["index"], 1] for r in dropped],
-            mode="markers", name=f"retrieved but below {lq.get('min_similarity', 0):.2f} (not sent)",
-            marker={"size": 15, "color": "rgba(0,0,0,0)", "line": {"width": 2, "color": MUTED_COLOR}},
+        fig.add_trace(_points(
+            coords[[r["index"] for r in dropped]], three_d, mode="markers",
+            name=f"retrieved but below {lq.get('min_similarity', 0):.2f} (not sent)",
+            marker=_ring(three_d, 15, MUTED_COLOR, width=2),
             customdata=[[r["similarity"], html.escape(r["metadata"].get("source", "unknown")),
                          hover_text(r["metadata"].get("text", ""))] for r in dropped],
             hovertemplate="<b>Not sent</b> · similarity %{customdata[0]:.2f} · %{customdata[1]}"
@@ -352,15 +396,16 @@ def retrieval_map_figure(ix, lq):
         ))
     colors = [RANK_COLORS[k % len(RANK_COLORS)] for k in range(len(results))]
     for r, color in zip(results, colors):
-        fig.add_trace(go.Scatter(
-            x=[qx, coords[r["index"], 0]], y=[qy, coords[r["index"], 1]], mode="lines",
-            line={"color": color, "width": 1.5, "dash": "dot"}, hoverinfo="skip", showlegend=False,
+        fig.add_trace(_points(
+            np.array([question_point, coords[r["index"]]]), three_d, mode="lines",
+            line={"color": color, "width": 1.5 if not three_d else 4, "dash": "dot"},
+            hoverinfo="skip", showlegend=False,
         ))
     if results:
-        fig.add_trace(go.Scatter(
-            x=[coords[r["index"], 0] for r in results], y=[coords[r["index"], 1] for r in results],
-            mode="markers+text", name="sent to Gemini (#1 = closest)",
-            marker={"size": 17, "color": colors, "line": {"width": 2, "color": "white"}},
+        fig.add_trace(_points(
+            coords[[r["index"] for r in results]], three_d, mode="markers+text",
+            name="sent to Gemini (#1 = closest)",
+            marker=_dot(three_d, 17, colors),
             text=[f"#{k + 1}" for k in range(len(results))],
             # alternate label sides so labels of nearby points don't print on top of each other
             textposition=[("top center", "bottom center", "middle right", "middle left")[k % 4]
@@ -371,11 +416,13 @@ def retrieval_map_figure(ix, lq):
             hovertemplate="<b>#%{customdata[0]}</b> · similarity %{customdata[1]:.2f} · %{customdata[2]}"
                           "<br><br>%{customdata[3]}<extra></extra>",
         ))
-    fig.add_trace(go.Scatter(
-        x=[qx], y=[qy], mode="markers+text", name="your question",
-        marker={"size": 24, "symbol": "star", "color": QUERY_COLOR, "line": {"width": 1.5, "color": "white"}},
-        text=["your question"], textposition="bottom center",
+    question_marker = ({"size": 9, "symbol": "diamond", "color": QUERY_COLOR, "line": {"width": 1, "color": "white"}}
+                       if three_d else
+                       {"size": 24, "symbol": "star", "color": QUERY_COLOR, "line": {"width": 1.5, "color": "white"}})
+    fig.add_trace(_points(
+        np.array([question_point]), three_d, mode="markers+text", name="your question",
+        marker=question_marker, text=["your question"], textposition="bottom center",
         customdata=[[hover_text(lq["question"])]],
         hovertemplate="<b>Your question</b><br>%{customdata[0]}<extra></extra>",
     ))
-    return style_map(fig)
+    return style_map(fig, three_d)
