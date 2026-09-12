@@ -1,0 +1,7 @@
+[server]
+# Streamlit's file watcher scans every imported module; on transformers it tries to import optional
+# vision models (torchvision) and floods the terminal with harmless tracebacks. Restart after edits.
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false

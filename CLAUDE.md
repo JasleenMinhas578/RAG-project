@@ -28,6 +28,9 @@ Web app (the primary way to use this project):
 ```bash
 streamlit run streamlit_app.py
 ```
+`.streamlit/config.toml` turns Streamlit's file watcher off (`fileWatcherType = "none"`): with it on,
+the watcher scans `transformers` and floods the terminal with harmless `No module named 'torchvision'`
+tracebacks. Consequence: code edits don't hot-reload — restart the server to pick them up.
 
 CLI example (builds/loads a FAISS index from a `data/` directory, asks one hardcoded query):
 ```bash
