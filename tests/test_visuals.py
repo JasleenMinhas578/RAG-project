@@ -14,6 +14,7 @@ from src.visuals import (
     find_overlap,
     hits_html,
     hover_text,
+    modes_table_html,
     neighbors_html,
     outline_html,
     prompt_html,
@@ -150,3 +151,28 @@ def test_scores_html_shows_four_measures_and_missing_scores():
     out = scores_html({"measures": measures, "parsed": True})
     assert out.count('class="rag-score"') == 4
     assert "&lt;ok&gt;" in out and "–<span>/5</span>" in out
+
+
+def test_modes_table_renders_a_row_per_mode_with_its_steps_as_pills():
+    rows = [
+        {"mode": "Classic RAG", "retrieval": "Vector search", "best_for": "Most questions",
+         "workflow": "7 Embed the question \u00b7 8 Retrieve \u00b7 9 Build the prompt \u00b7 10 Answer", "calls": "1"},
+        {"mode": "Agentic RAG", "retrieval": "Only when the router asks", "best_for": "Mixed chats",
+         "workflow": "7 Decide \u00b7 8 Retrieve (only if needed) \u00b7 9 Answer", "calls": "2"},
+    ]
+
+    out = modes_table_html(rows)
+
+    assert out.count("<tr>") == 3  # one header row plus one per mode
+    assert out.count('class="rag-mt-step"') == 7  # 4 steps + 3 steps
+    assert "8 Retrieve (only if needed)" in out
+    assert ">1<" in out and ">2<" in out
+
+
+def test_modes_table_escapes_text_it_is_given():
+    rows = [{"mode": "<script>", "retrieval": "a & b", "best_for": "x", "workflow": "7 Go", "calls": "1"}]
+
+    out = modes_table_html(rows)
+
+    assert "<script>" not in out
+    assert "&lt;script&gt;" in out and "a &amp; b" in out

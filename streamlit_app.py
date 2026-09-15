@@ -37,6 +37,7 @@ from src.visuals import (
     chunk_map_figure,
     find_overlap,
     hits_html,
+    modes_table_html,
     neighbors_html,
     outline_html,
     prompt_html,
@@ -125,6 +126,50 @@ def text_box(text: str):
 def note(title: str, paragraphs: list):
     body = "".join(f"<p>{p}</p>" for p in paragraphs)
     st.html(f'<div class="rag-note"><div class="h">{title}</div>{body}</div>')
+
+
+# (how the mode finds its text, what it suits) for the overview table in step 6. The workflow and
+# the Gemini-call count are derived from MODE_INTROS and modes.estimated_gemini_requests instead of
+# repeated here, so the table can't drift from the cards or from the real cost.
+MODE_FACTS = {
+    modes.MODE_CLASSIC: ("Vector search over every chunk",
+                         "Most questions about your documents; the baseline to compare against"),
+    modes.MODE_AGENTIC: ("Vector search, but only when the router asks for it",
+                         "Mixed chats where many questions aren't about the documents at all"),
+    modes.MODE_VECTORLESS: ("No search: Gemini picks sections from an outline",
+                            "Long, well-structured documents whose headings describe the content"),
+    modes.MODE_KEYWORD: ("Keyword (TF-IDF) and vector search, side by side",
+                         "Questions with exact names, codes or rare terms, and seeing why each search misses"),
+    modes.MODE_EVALUATION: ("Vector search, as in classic RAG",
+                            "Checking answer quality before trusting a setup, or after changing settings"),
+    modes.MODE_COMPARE: ("Whatever each compared mode uses",
+                         "Deciding which design suits your documents"),
+}
+
+
+def mode_calls_label(mode: str) -> str:
+    """How many Gemini requests one question costs in this mode, for the overview table."""
+    if mode == modes.MODE_COMPARE:
+        return "1-2 per mode, +1 judge each"
+    return str(modes.estimated_gemini_requests(mode))
+
+
+def modes_overview_table() -> str:
+    return modes_table_html([
+        {"mode": mode, "retrieval": MODE_FACTS[mode][0], "workflow": MODE_INTROS[mode][1],
+         "best_for": MODE_FACTS[mode][1], "calls": mode_calls_label(mode)}
+        for mode in modes.MODES
+    ])
+
+
+def render_modes_overview(expanded: bool = False):
+    """The six modes side by side. Shown before indexing too, so the designs can be read about
+    without uploading anything first."""
+    with st.expander("Compare all six modes", expanded=expanded):
+        st.html(modes_overview_table())
+        st.caption("Step numbers continue from the indexing stage, so every mode's first query step is 7. "
+                   "Only Classic RAG and RAG evaluation light up the big flowchart above; the others "
+                   "explain themselves in their own cards.")
 
 
 def mode_intro(mode: str):
@@ -1057,11 +1102,13 @@ stage_banner("query", "Query stage", "Runs once per question. Pick a RAG mode, a
 
 if not ix:
     st.info("The query stage searches the index built above, so run indexing first.")
+    render_modes_overview()
 else:
     with st.container(border=True):
         step_header(6, "Choose a RAG mode and ask a question", "query",
                     "Each mode answers from the same indexed documents in a different way. Classic RAG is the "
                     "baseline; the others show designs used in real systems, rebuilt here with free tools only.")
+        render_modes_overview()
         mode = st.radio("RAG mode", modes.MODES, index=0, horizontal=True, key="rag_mode",
                         help="Each mode keeps its own last result, so you can switch back and forth.")
         mode_intro(mode)

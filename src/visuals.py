@@ -68,6 +68,19 @@ CSS = """
 .rag-mode .h {font-weight:700; font-size:1.05rem; margin-bottom:.2rem}
 .rag-mode p {margin:0 0 .35rem}
 .rag-mode .s {font-size:.9rem; opacity:.8}
+.rag-mt-wrap {overflow-x:auto; margin:.2rem 0 .6rem}
+.rag-mt {border-collapse:collapse; width:100%; font-size:.9rem; line-height:1.45}
+.rag-mt th, .rag-mt td {text-align:left; vertical-align:top; padding:.55rem .7rem;
+  border-bottom:1px solid rgba(127,127,127,.22)}
+.rag-mt thead th {font-size:.82rem; text-transform:uppercase; letter-spacing:.03em; opacity:.75;
+  border-bottom:2px solid rgba(127,127,127,.35); white-space:nowrap}
+.rag-mt tbody th {font-weight:700; white-space:nowrap; border-left:4px solid #16A34A; padding-left:.6rem}
+.rag-mt-sub {text-transform:none; letter-spacing:0; font-weight:400; opacity:.8}
+.rag-mt-calls {text-align:center; font-variant-numeric:tabular-nums}
+.rag-mt-flow {display:flex; flex-wrap:wrap; gap:.25rem; align-items:center}
+.rag-mt-step {background:rgba(22,163,74,.12); border:1px solid rgba(22,163,74,.35); border-radius:6px;
+  padding:.1rem .4rem; white-space:nowrap; font-size:.84rem}
+.rag-mt-step + .rag-mt-step::before {content:"→ "; opacity:.55; margin-right:.15rem}
 .rag-callout {border:1px dashed rgba(22,163,74,.6); border-radius:8px; padding:.55rem .8rem; margin:.2rem 0 .7rem;
   font-size:.96rem; font-weight:600}
 .rag-outline {max-height:38rem; overflow:auto; padding-right:.2rem}
@@ -380,6 +393,35 @@ def outline_html(sections, picked_ids=()) -> str:
         else:
             rows.append(f'<div class="rag-outline-item"><span class="sid">{s["id"]}</span>{title}</div>')
     return f'<div class="rag-outline">{"".join(rows)}</div>'
+
+
+def modes_table_html(rows) -> str:
+    """One row per RAG mode: how it finds text, its numbered workflow, what it suits, and what it
+    costs. `rows` come from the app so the workflow column can't drift from each mode's own card.
+
+    The workflow string is split on the same "\u00b7" the cards use, and each step is drawn as a pill,
+    so the table reads as a pipeline rather than a sentence.
+    """
+    body = []
+    for row in rows:
+        steps = "".join(
+            f'<span class="rag-mt-step">{html.escape(step.strip())}</span>'
+            for step in row["workflow"].split("\u00b7")
+        )
+        body.append(
+            f'<tr><th scope="row">{html.escape(row["mode"])}</th>'
+            f'<td>{html.escape(row["retrieval"])}</td>'
+            f'<td><div class="rag-mt-flow">{steps}</div></td>'
+            f'<td>{html.escape(row["best_for"])}</td>'
+            f'<td class="rag-mt-calls">{html.escape(row["calls"])}</td></tr>'
+        )
+    return (
+        '<div class="rag-mt-wrap"><table class="rag-mt">'
+        '<thead><tr><th scope="col">Mode</th><th scope="col">How it finds the text</th>'
+        '<th scope="col">Workflow</th><th scope="col">Best for</th>'
+        '<th scope="col">Gemini calls<br><span class="rag-mt-sub">per question</span></th></tr></thead>'
+        f'<tbody>{"".join(body)}</tbody></table></div>'
+    )
 
 
 def _score_color(score) -> str:

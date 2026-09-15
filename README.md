@@ -89,6 +89,9 @@ numbered steps, and uses only local tools plus Gemini. No other paid service is 
 | **RAG evaluation** | Classic RAG, then Gemini grades the answer (LLM-as-a-judge): Correct, Relevant, Grounded, Chunks relevant, each 1–5 with a reason | +1 (judge) |
 | **Compare modes** | Runs one question through 2–4 modes and shows answers, sources and quality scores side by side, with a summary table | one run per mode, each graded |
 
+The app shows this same comparison in step 6, under **Compare all six modes**, with each mode's
+numbered workflow — it's there before you upload anything, so you can read the designs first.
+
 The **Show quality scores** toggle adds the judge's four scores to any mode's answer (one extra call).
 Vectorless RAG works best on structured documents with clear headings. The judge only sees the
 retrieved text, so "Correct" means "matches the retrieved text", and a model grading an AI answer
