@@ -120,23 +120,41 @@ def estimated_gemini_requests(mode: str, quality_scores: bool = False, with_with
 # Shared answer step
 # --------------------------------------------------------------------------
 
-def _generate(rag, out: dict, empty_error: str) -> dict:
-    if out["prompt"] is None:
-        out["error"] = empty_error
-        return out
+NO_CHUNKS_ERROR = "No chunks were found, so nothing was sent to Gemini."
+
+
+def new_result(**extras) -> dict:
+    """The result shape every engine returns, so no engine can forget a key.
+
+    The five keys below are the contract the app relies on. Each mode adds its own on top:
+    classic and agentic add `dropped`/`min_similarity`/`grounding`, agentic adds `route`,
+    vectorless adds `pick`/`sections_used`, keyword adds `vector_results`/`unknown_words`.
+    """
+    return {"results": [], "blocks": [], "prompt": None, "answer": None, "error": None, **extras}
+
+
+def _generate(rag, result: dict, empty_error: str = NO_CHUNKS_ERROR) -> dict:
+    """Ask Gemini for the result's prompt, turning any API failure into a message for the user."""
+    if result["prompt"] is None:
+        result["error"] = empty_error
+        return result
     try:
-        out["answer"] = rag.generate_answer(out["prompt"])
+        result["answer"] = rag.generate_answer(result["prompt"])
     except Exception as exc:  # any API failure becomes a message for the user
-        out["error"] = friendly_error(exc)
-    return out
+        result["error"] = friendly_error(exc)
+    return result
 
 
-def answer_from_results(rag, question: str, results,
-                        empty_error: str = "No chunks were found, so nothing was sent to Gemini.") -> dict:
-    blocks = rag.context_blocks(results)
-    out = {"results": results, "blocks": blocks, "prompt": prompt_from_blocks(blocks, question) if blocks else None,
-           "answer": None, "error": None}
-    return _generate(rag, out, empty_error)
+def answer_from_blocks(rag, question: str, blocks, empty_error: str = NO_CHUNKS_ERROR, **extras) -> dict:
+    """Build the prompt from already-labeled context blocks, ask Gemini, return the result."""
+    prompt = prompt_from_blocks(blocks, question) if blocks else None
+    return _generate(rag, new_result(blocks=blocks, prompt=prompt, **extras), empty_error)
+
+
+def answer_from_results(rag, question: str, results, empty_error: str = NO_CHUNKS_ERROR, **extras) -> dict:
+    """Label retrieved chunks as context blocks, then answer from them."""
+    return answer_from_blocks(rag, question, rag.context_blocks(results), empty_error,
+                              results=results, **extras)
 
 
 # --------------------------------------------------------------------------
@@ -144,17 +162,18 @@ def answer_from_results(rag, question: str, results,
 # --------------------------------------------------------------------------
 
 def run_classic(rag, question: str, top_k: int, min_similarity: float, progress=_noop) -> dict:
+    """Vector search, drop the weak matches, answer from what is left. The baseline design."""
     progress("Finding the closest chunks with vector search…")
     kept, dropped = filter_by_similarity(rag.retrieve(question, top_k=top_k), min_similarity)
     if kept:
         progress("Asking Gemini to answer from those chunks…")
-    out = answer_from_results(rag, question, kept)
-    out.update(dropped=dropped, min_similarity=min_similarity,
-               grounding=grounding_score(out["answer"], kept) if out["answer"] else None)
+    result = answer_from_results(rag, question, kept, dropped=dropped, min_similarity=min_similarity)
+    result["grounding"] = grounding_score(result["answer"], kept) if result["answer"] else None
     if not kept and dropped:
-        out["error"] = (f"None of the retrieved chunks reached the minimum similarity of {min_similarity:.2f}, "
-                        "so nothing was sent to Gemini.")
-    return out
+        # More specific than the generic "no chunks" message: they were found, just too weak.
+        result["error"] = (f"None of the retrieved chunks reached the minimum similarity of {min_similarity:.2f}, "
+                           "so nothing was sent to Gemini.")
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -172,21 +191,26 @@ def route_question(ask, question: str, file_names) -> dict:
 
 
 def run_agentic(rag, question: str, file_names, top_k: int, min_similarity: float, progress=_noop) -> dict:
+    """Let Gemini decide whether the documents are needed, and skip retrieval when they are not.
+
+    The router's own call can fail, which is a different failure from the answer call failing --
+    hence the early return with no route.
+    """
     progress("Asking Gemini whether the documents are needed…")
+    empty = dict(dropped=[], grounding=None, min_similarity=min_similarity)
     try:
         route = route_question(rag.generate_answer, question, file_names)
     except Exception as exc:  # the routing call itself failed (e.g. rate limit)
-        return {"route": None, "results": [], "dropped": [], "blocks": [], "prompt": None, "answer": None,
-                "grounding": None, "min_similarity": min_similarity, "error": friendly_error(exc)}
+        return new_result(route=None, error=friendly_error(exc), **empty)
     if route["needs_retrieval"]:
-        out = run_classic(rag, question, top_k, min_similarity, progress)
+        result = run_classic(rag, question, top_k, min_similarity, progress)
     else:
         progress("Answering directly, without searching the documents…")
-        out = _generate(rag, {"results": [], "dropped": [], "blocks": [], "answer": None, "error": None,
-                              "grounding": None, "min_similarity": min_similarity,
-                              "prompt": DIRECT_PROMPT.format(question=question)}, "")
-    out["route"] = route
-    return out
+        # Answering from the question alone: a prompt with no context blocks, so it is built here
+        # rather than by answer_from_blocks.
+        result = _generate(rag, new_result(prompt=DIRECT_PROMPT.format(question=question), **empty))
+    result["route"] = route
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -319,24 +343,26 @@ def section_blocks(sections) -> list:
 
 
 def run_vectorless(rag, question: str, outline: dict, progress=_noop) -> dict:
-    out = {"results": [], "blocks": [], "prompt": None, "answer": None, "error": None, "pick": None, "sections_used": []}
+    """Answer without embeddings: Gemini reads an outline of the documents and picks sections to read.
+
+    Like run_agentic, the section-picking call can fail on its own, before any answer is attempted.
+    """
+    empty = dict(pick=None, sections_used=[])
     sections = outline["sections"]
     if not sections:
-        out["error"] = "No outline could be built from these documents."
-        return out
+        return new_result(error="No outline could be built from these documents.", **empty)
     progress("Asking Gemini to pick sections from the outline…")
     try:
         pick = pick_sections(rag.generate_answer, question, sections)
     except Exception as exc:  # the picking call itself failed (e.g. rate limit)
-        out["error"] = friendly_error(exc)
-        return out
-    by_id = {s["id"]: s for s in sections}
+        return new_result(error=friendly_error(exc), **empty)
+    by_id = {section["id"]: section for section in sections}
     used = [by_id[section_id] for section_id in pick["picked"]]
-    blocks = section_blocks(used)
-    out.update(pick=pick, sections_used=used, blocks=blocks, prompt=prompt_from_blocks(blocks, question) if blocks else None)
-    if blocks:
+    if used:
         progress("Asking Gemini to answer from the picked sections…")
-    return _generate(rag, out, "Gemini didn't pick any section as relevant, so no answer was generated.")
+    return answer_from_blocks(rag, question, section_blocks(used),
+                              "Gemini didn't pick any section as relevant, so no answer was generated.",
+                              pick=pick, sections_used=used)
 
 
 # --------------------------------------------------------------------------
@@ -373,19 +399,25 @@ class KeywordIndex:
 
 def run_keyword(rag, question: str, keyword_index: KeywordIndex, texts, sources, top_k: int,
                 min_similarity: float, progress=_noop) -> dict:
+    """Run keyword search and vector search over the same chunks, and answer from the keyword hits.
+
+    `min_similarity` is carried for display only: the app compares it against the best *vector*
+    score to explain why the two searches disagree. It is deliberately not applied to the keyword
+    hits, whose TF-IDF scores are on a different scale.
+    """
     progress("Searching for the question's exact words (keyword search)…")
-    hits = [{"index": h["index"], "similarity": h["score"],
-             "metadata": {"text": texts[h["index"]], "source": sources[h["index"]]}}
-            for h in keyword_index.search(question, top_k)]
+    hits = [{"index": hit["index"], "similarity": hit["score"],
+             "metadata": {"text": texts[hit["index"]], "source": sources[hit["index"]]}}
+            for hit in keyword_index.search(question, top_k)]
     progress("Searching for similar meaning (vector search), for comparison…")
     vector_results = rag.retrieve(question, top_k=top_k)
     if hits:
         progress("Asking Gemini to answer from the keyword results…")
-    out = answer_from_results(rag, question, hits, "Keyword search found no chunk containing any word from "
-                                                   "your question, so nothing was sent to Gemini.")
-    out.update(vector_results=vector_results, unknown_words=keyword_index.unknown_words(question),
-               min_similarity=min_similarity)
-    return out
+    return answer_from_results(rag, question, hits,
+                               "Keyword search found no chunk containing any word from your question, "
+                               "so nothing was sent to Gemini.",
+                               vector_results=vector_results, min_similarity=min_similarity,
+                               unknown_words=keyword_index.unknown_words(question))
 
 
 # --------------------------------------------------------------------------
