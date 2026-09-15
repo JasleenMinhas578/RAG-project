@@ -1,0 +1,11 @@
+# Lint config only -- this project installs from requirements.txt, not as a package.
+[tool.ruff]
+line-length = 110          # matches the style the code was already written in
+# archive/ holds standalone tutorial notebooks kept for reference. They are independent of
+# src/ and of each other, are not wired into the app, and are deliberately left as they were.
+exclude = ["archive", ".venv"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes (unused imports, undefined names), I import order,
+# UP outdated syntax, B likely bugs (including mutable default arguments).
+select = ["E", "W", "F", "I", "UP", "B"]

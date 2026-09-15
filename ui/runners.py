@@ -1,0 +1,248 @@
+"""Doing the work, as opposed to drawing it.
+
+Each function here runs a stage, shows live progress in an st.status box, lights up the
+flowchart, saves every intermediate result to st.session_state, and then calls st.rerun().
+The ui.indexing / ui.query / ui.mode_cards modules draw the page purely from that saved state.
+
+Keep it that way: anything rendered from inside these functions disappears on the next widget
+interaction, because Streamlit reruns the script from the top every time.
+"""
+import os
+import shutil
+import tempfile
+
+import numpy as np
+import streamlit as st
+from sklearn.decomposition import PCA
+
+from src import config, modes
+from src.data_loader import load_all_documents
+from src.embedding import EmbeddingPipeline
+from src.search import RAGSearch, filter_by_similarity, friendly_error, grounding_score
+from src.vectorstore import FaissVectorStore
+from src.visuals import find_overlap
+from ui.components import QUERY_STEP_IDS, mark, redraw_flow
+
+
+def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_placeholder):
+    st.session_state.flow_status = {}
+    st.session_state.results_by_mode = {}
+    for widget_key in ("inspect_chunk", "embed_view", "retrieval_view"):
+        st.session_state.pop(widget_key, None)
+    tmp_dir = tempfile.mkdtemp(prefix="rag_upload_")
+    try:
+        with st.status("Running the indexing stage…", expanded=True) as status:
+            for f in uploaded_files:
+                with open(os.path.join(tmp_dir, os.path.basename(f.name)), "wb") as out:
+                    out.write(f.getbuffer())
+            mark(flow_placeholder, "upload", "done")
+
+            st.write("Step 2 · Loading and parsing your files…")
+            mark(flow_placeholder, "load", "active")
+            docs = load_all_documents(tmp_dir)
+            if not docs:
+                mark(flow_placeholder, "load", "pending")
+                status.update(label="No text could be extracted", state="error")
+                st.error("No text could be extracted from the uploaded files. Scanned PDFs (images of text) are not supported.")
+                return
+            mark(flow_placeholder, "load", "done")
+
+            st.write("Step 3 · Splitting the text into chunks…")
+            mark(flow_placeholder, "chunk", "active")
+            pipe = EmbeddingPipeline(model_name=config.DEFAULT_EMBEDDING_MODEL,
+                                     chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+            chunks = pipe.chunk_documents(docs)
+            truncated_from = len(chunks) if len(chunks) > config.MAX_CHUNKS else None
+            chunks = chunks[:config.MAX_CHUNKS]
+            mark(flow_placeholder, "chunk", "done")
+
+            st.write("Step 4 · Turning each chunk into a list of numbers…")
+            mark(flow_placeholder, "embed_docs", "active")
+            progress = st.progress(0.0)
+            embeddings = np.asarray(pipe.embed_chunks(
+                chunks, progress_callback=lambda done, total: progress.progress(done / total, text=f"{done} of {total} chunks")
+            ), dtype="float32")
+            mark(flow_placeholder, "embed_docs", "done")
+
+            st.write("Step 5 · Storing the vectors in the FAISS index…")
+            mark(flow_placeholder, "index", "active")
+            texts = [c.page_content for c in chunks]
+            sources = [os.path.basename(c.metadata.get("source", "unknown")) for c in chunks]
+            store = FaissVectorStore(embedding_model=config.DEFAULT_EMBEDDING_MODEL)
+            store.add_embeddings(embeddings, [{"text": t, "source": s} for t, s in zip(texts, sources)])
+            # One PCA with up to 3 components serves both maps: PCA components come in order of
+            # importance, so the 2D map is simply the first two of the three.
+            pca = PCA(n_components=min(3, len(chunks)), random_state=42).fit(embeddings) if len(chunks) >= 2 else None
+            projected = pca.transform(embeddings) if pca is not None else None
+            mark(flow_placeholder, "index", "done")
+            status.update(label="Indexing complete", state="complete")
+
+        per_file, file_texts = {}, {}
+        for d in docs:
+            name = os.path.basename(d.metadata.get("source", "unknown"))
+            info = per_file.setdefault(name, {"pieces": 0, "chars": 0, "preview": ""})
+            info["pieces"] += 1
+            info["chars"] += len(d.page_content)
+            if not info["preview"] and d.page_content.strip():
+                info["preview"] = d.page_content.strip()[:600]
+            file_texts.setdefault(name, []).append(d.page_content)
+
+        overlap_example = None
+        for i in range(len(texts) - 1):
+            if sources[i] == sources[i + 1]:
+                n = find_overlap(texts[i], texts[i + 1])
+                if n:
+                    overlap_example = (i, n)
+                    break
+
+        st.session_state.index_data = {
+            "files": [os.path.basename(f.name) for f in uploaded_files],
+            "per_file": per_file,
+            # load_all_documents only logs a file it couldn't parse, and the app's terminal is not
+            # in front of the user, so name them on the page instead of letting them vanish.
+            "skipped": [os.path.basename(f.name) for f in uploaded_files
+                        if os.path.basename(f.name) not in per_file],
+            "n_docs": len(docs),
+            "texts": texts,
+            "sources": sources,
+            "embeddings": embeddings,
+            "store": store,
+            "pca": pca,
+            "coords": projected[:, :2] if projected is not None else None,
+            "coords3d": projected if projected is not None and projected.shape[1] == 3 else None,
+            # cumulative share of variance kept: [1 component, 2 components, 3 components]
+            "variance": np.cumsum(pca.explained_variance_ratio_).tolist() if pca is not None else None,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+            "truncated_from": truncated_from,
+            "overlap_example": overlap_example,
+            # for the alternative modes: an outline per file (vectorless) and a TF-IDF index (keyword search)
+            "outline": modes.build_outline([(name, "\n\n".join(parts)) for name, parts in file_texts.items()]),
+            "keyword_index": modes.KeywordIndex(texts),
+        }
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    st.rerun()
+
+
+def store_result(mode: str, out: dict):
+    st.session_state.results_by_mode[mode] = out
+    if out.get("answer"):
+        st.session_state.history.append({"mode": mode, "question": out["question"], "answer": out["answer"]})
+
+
+def run_query(question: str, top_k: int, min_similarity: float, compare: bool, judge: bool, mode: str,
+              api_key: str, flow_placeholder):
+    """Classic RAG (also the first part of RAG evaluation), run step by step to light up the big flowchart."""
+    ix = st.session_state.index_data
+    store = ix["store"]
+    rag = RAGSearch(vectorstore=store, google_api_key=api_key)
+    for step_id in QUERY_STEP_IDS:
+        st.session_state.flow_status.pop(step_id, None)
+    lq = {"question": question, "answer": None, "error": None, "min_similarity": min_similarity,
+          "compare": compare, "plain_answer": None, "plain_error": None}
+
+    with st.status(f"Running {mode}…", expanded=True) as status:
+        mark(flow_placeholder, "question", "done")
+
+        st.write("Step 7 · Turning your question into numbers…")
+        mark(flow_placeholder, "embed_q", "active")
+        lq["q_vec"] = store.model.encode([question])[0]
+        projected_q = ix["pca"].transform([lq["q_vec"]])[0] if ix["pca"] is not None else None
+        lq["q_point"] = projected_q[:2] if projected_q is not None else None
+        lq["q_point3d"] = projected_q if ix["coords3d"] is not None else None
+        mark(flow_placeholder, "embed_q", "done")
+
+        st.write("Step 8 · Finding the closest chunks…")
+        mark(flow_placeholder, "retrieve", "active")
+        lq["results"], lq["dropped"] = filter_by_similarity(rag.retrieve(question, top_k=top_k), min_similarity)
+        mark(flow_placeholder, "retrieve", "done")
+
+        st.write("Step 9 · Building the prompt…")
+        mark(flow_placeholder, "prompt", "active")
+        lq["blocks"] = rag.context_blocks(lq["results"])
+        lq["prompt"] = rag.build_prompt(question, lq["results"])
+        mark(flow_placeholder, "prompt", "done" if lq["prompt"] else "pending")
+
+        if lq["prompt"] is None:
+            if lq["dropped"]:
+                best = max(r["similarity"] for r in lq["dropped"])
+                lq["error"] = (f"None of the {len(lq['dropped'])} retrieved chunks reached the minimum similarity of "
+                               f"{min_similarity:.2f} (the best scored {best:.2f}), so nothing was sent to Gemini. "
+                               "Try rephrasing your question, or lower the minimum similarity in the sidebar.")
+            else:
+                lq["error"] = "No chunks were retrieved, so there was nothing to send to Gemini."
+            status.update(label="No relevant chunks found", state="error")
+        else:
+            st.write("Step 10 · Asking Gemini…")
+            mark(flow_placeholder, "generate", "active")
+            try:
+                lq["answer"] = rag.generate_answer(lq["prompt"])
+                lq["grounding"] = grounding_score(lq["answer"], lq["results"])
+                mark(flow_placeholder, "generate", "done")
+            except Exception as e:  # shown to the user in step 10 instead of crashing the page
+                lq["error"] = friendly_error(e)
+                mark(flow_placeholder, "generate", "pending")
+            if lq["answer"] and compare:
+                st.write("Asking Gemini again, without your documents, for comparison…")
+                try:
+                    lq["plain_answer"] = rag.answer_without_context(question)
+                except Exception as e:  # the RAG answer still stands; show why the comparison is missing
+                    lq["plain_error"] = friendly_error(e)
+            if judge:
+                modes.add_quality_scores(rag, question, lq, progress=st.write)
+            status.update(label="Answer ready" if lq["answer"] else "Gemini call failed",
+                          state="complete" if lq["answer"] else "error")
+
+    store_result(mode, lq)
+    st.rerun()
+
+
+def run_engine(mode: str, rag, ix, question: str, settings: dict, progress):
+    if mode == modes.MODE_CLASSIC:
+        return modes.run_classic(rag, question, settings["top_k"], settings["min_similarity"], progress)
+    if mode == modes.MODE_AGENTIC:
+        return modes.run_agentic(rag, question, ix["files"], settings["top_k"], settings["min_similarity"], progress)
+    if mode == modes.MODE_VECTORLESS:
+        return modes.run_vectorless(rag, question, ix["outline"], progress)
+    return modes.run_keyword(rag, question, ix["keyword_index"], ix["texts"], ix["sources"], settings["top_k"],
+                             settings["min_similarity"], progress)
+
+
+def run_mode(mode: str, question: str, settings: dict, judge: bool, api_key: str, flow_placeholder):
+    """Agentic, vectorless and keyword modes. They don't light up the big (classic) flowchart."""
+    ix = st.session_state.index_data
+    rag = RAGSearch(vectorstore=ix["store"], google_api_key=api_key)
+    for step_id in QUERY_STEP_IDS:
+        st.session_state.flow_status.pop(step_id, None)
+    redraw_flow(flow_placeholder)
+    with st.status(f"Running {mode}…", expanded=True) as status:
+        out = run_engine(mode, rag, ix, question, settings, progress=st.write)
+        if judge:
+            modes.add_quality_scores(rag, question, out, progress=st.write)
+        status.update(label="Answer ready" if out.get("answer") else "Finished with a problem",
+                      state="complete" if out.get("answer") else "error")
+    out["question"] = question
+    store_result(mode, out)
+    st.rerun()
+
+
+def run_compare(question: str, selected: list, settings: dict, api_key: str, flow_placeholder):
+    ix = st.session_state.index_data
+    rag = RAGSearch(vectorstore=ix["store"], google_api_key=api_key)
+    for step_id in QUERY_STEP_IDS:
+        st.session_state.flow_status.pop(step_id, None)
+    redraw_flow(flow_placeholder)
+    runs = {}
+    with st.status("Running the question through each mode…", expanded=True) as status:
+        for mode in selected:
+            st.write(f"**{mode}**")
+            out = run_engine(mode, rag, ix, question, settings, progress=st.write)
+            modes.add_quality_scores(rag, question, out, progress=st.write)
+            out["question"] = question
+            runs[mode] = out
+        failed = [m for m, r in runs.items() if not r.get("answer")]
+        status.update(label="All modes answered" if not failed else f"Finished; {len(failed)} mode(s) had a problem",
+                      state="complete" if not failed else "error")
+    st.session_state.results_by_mode[modes.MODE_COMPARE] = {"question": question, "runs": runs}
+    st.rerun()
