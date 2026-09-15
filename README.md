@@ -20,6 +20,29 @@ Everything runs on **free tiers**:
 
 ---
 
+## Contents
+
+- [What is RAG?](#what-is-rag)
+- [The 10 steps the app visualizes](#the-10-steps-the-app-visualizes)
+- [RAG modes](#rag-modes)
+  - [Which mode to use when](#which-mode-to-use-when)
+- [Getting started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [1. Clone and install](#1-clone-and-install)
+  - [2. Add your API key](#2-add-your-api-key)
+  - [3. Run the web app](#3-run-the-web-app)
+- [Command-line example](#command-line-example)
+- [Using the pipeline in your own code](#using-the-pipeline-in-your-own-code)
+- [Project structure](#project-structure)
+  - [What each file does](#what-each-file-does)
+  - [How the modules fit together](#how-the-modules-fit-together)
+- [Configuration](#configuration)
+- [Running the tests](#running-the-tests)
+- [Troubleshooting](#troubleshooting)
+- [The `archive/` folder](#the-archive-folder)
+
+---
+
 ## What is RAG?
 
 An LLM only knows what it was trained on. RAG lets it answer questions about **your** documents
@@ -236,32 +259,73 @@ The modules log with Python's `logging` module instead of printing. Call
 
 ```
 RAG-project/
-├── streamlit_app.py        # The page: settings, layout, and the order the sections appear in
-├── app.py                  # Minimal CLI example using the same pipeline
-├── ui/                     # Everything the app draws (Streamlit); see ui/__init__.py for the map
-│   ├── components.py       # Shared widgets: stage banners, step headers, answer and prompt cards
-│   ├── mode_copy.py        # What each RAG mode is, and the six-mode comparison table
-│   ├── runners.py          # Does the work: run a stage, save to session state, rerun
-│   ├── indexing.py         # Indexing stage, steps 1 to 5
-│   ├── query.py            # Classic RAG, steps 7 to 11
-│   └── mode_cards.py       # Agentic, vectorless, keyword and compare cards
-├── src/
-│   ├── config.py           # Limits and defaults (file/chunk limits, chunk size, top_k, thresholds, model names)
-│   ├── data_loader.py      # Loads PDF/TXT/MD/CSV/XLSX/DOCX/JSON into LangChain Documents
-│   ├── embedding.py        # Chunking + local embeddings (the model is loaded once and shared)
-│   ├── vectorstore.py      # FAISS index wrapper: add, search, save/load
-│   ├── search.py           # RAGSearch: retrieve → filter → build prompt → generate; grounding score
-│   ├── modes.py            # Agentic, vectorless, keyword (TF-IDF) and evaluation (judge) RAG modes
-│   └── visuals.py          # Rendering that needs no Streamlit: flowchart SVG, HTML, Plotly figures
-├── tests/                  # pytest suite
-├── .streamlit/config.toml  # Streamlit settings (file watcher off, telemetry off)
-├── archive/                # Earlier standalone tutorial notebooks (not used by the app)
-├── requirements.txt        # Pinned runtime dependencies
-├── requirements-dev.txt    # Runtime dependencies + pytest + ruff
-├── pyproject.toml          # Ruff lint configuration
+├── streamlit_app.py          the page
+├── ui/                       what the app draws
+│   ├── components.py
+│   ├── mode_copy.py
+│   ├── runners.py
+│   ├── indexing.py
+│   ├── query.py
+│   └── mode_cards.py
+├── src/                      the pipeline, with no web app
+│   ├── config.py
+│   ├── data_loader.py
+│   ├── embedding.py
+│   ├── vectorstore.py
+│   ├── search.py
+│   ├── modes.py
+│   └── visuals.py
+├── app.py                    CLI example
+├── tests/                    pytest suite
+├── archive/                  older standalone notebooks
+├── .streamlit/config.toml
+├── requirements.txt
+├── requirements-dev.txt
+├── pyproject.toml
 ├── pytest.ini
-└── CLAUDE.md               # Detailed architecture notes
+└── CLAUDE.md
 ```
+
+Every file is described below.
+
+### What each file does
+
+**The app** — `src/` is the pipeline and never imports Streamlit; `ui/` is everything drawn on top of it.
+
+| File | What it does | Change it when you want to |
+|---|---|---|
+| `streamlit_app.py` | The page itself: session-state defaults, the sidebar, the layout, and the order the sections appear in | Add a sidebar setting, or move a section |
+| `ui/components.py` | The widgets every section reuses: stage banners, step headers, inline definitions, text boxes, and the shared answer, prompt and score cards | Add something more than one section needs |
+| `ui/mode_copy.py` | What each RAG mode is, its steps, when it fits and when it doesn't, plus the six-mode comparison table | Reword a mode, or add one |
+| `ui/runners.py` | Does the work: runs a stage, shows live progress, saves every result to session state, then reruns | Change what gets computed or stored |
+| `ui/indexing.py` | The indexing stage, steps 1 to 5 | Change how upload → index is presented |
+| `ui/query.py` | Classic RAG, steps 7 to 11 | Change how a classic answer is presented |
+| `ui/mode_cards.py` | The cards for agentic, vectorless, keyword and compare modes | Change how a non-classic mode explains itself |
+
+**The pipeline** — importable on its own, with no web app (see [Using the pipeline in your own code](#using-the-pipeline-in-your-own-code)).
+
+| File | What it does | Change it when you want to |
+|---|---|---|
+| `src/config.py` | Every limit and default in one place: upload caps, chunk size and overlap, `top_k`, the minimum similarity, model names, retry count | Tune anything — change it here, not inline |
+| `src/data_loader.py` | Loads PDF, TXT, MD, CSV, XLSX, DOCX and JSON into LangChain Documents, skipping files it can't parse | Support a new file type |
+| `src/embedding.py` | Splits documents into chunks and embeds them locally; the model is loaded once and shared | Change chunking, or the embedding model |
+| `src/vectorstore.py` | The FAISS index: add, search, save and load, plus cosine similarity and the settings check on load | Change how vectors are stored or searched |
+| `src/search.py` | `RAGSearch`: retrieve → filter → build the prompt → generate. Also the prompt template, citation parsing, the grounding score and the plain-English Gemini errors | Change the prompt, or an error message |
+| `src/modes.py` | The alternative RAG designs and their Gemini prompts: agentic routing, vectorless outlines, TF-IDF keyword search, and the LLM-as-a-judge scoring | Add a RAG design, or tune a mode's prompt |
+| `src/visuals.py` | All drawing that needs no Streamlit: the colour palette, the CSS block, the flowchart SVG, the HTML snippets and the Plotly figures | Change how anything looks |
+
+**Project files**
+
+| File | What it does |
+|---|---|
+| `app.py` | Minimal CLI example: build or load a FAISS index from `data/` and ask one question |
+| `tests/` | The pytest suite, one file per `src/` module plus a smoke test that the page renders |
+| `.streamlit/config.toml` | Streamlit settings: file watcher off (see [Troubleshooting](#troubleshooting)), telemetry off |
+| `requirements.txt` | Pinned runtime dependencies, including the transitive `torch` and `transformers` |
+| `requirements-dev.txt` | The above plus `pytest` and `ruff` |
+| `pyproject.toml` | Ruff lint configuration |
+| `archive/` | Earlier standalone tutorial notebooks, kept for reference and not used by the app |
+| `CLAUDE.md` | Detailed architecture notes for working on the code |
 
 ### How the modules fit together
 
