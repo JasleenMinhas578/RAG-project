@@ -161,9 +161,15 @@ numbers match the flowchart.
   `FaissVectorStore.neighbors()`. Both maps default to 2D (reason in the `MAP_VIEWS` comment).
 - **RAG modes:** step 6 has a mode menu (`modes.MODES`), above it a "Compare all six modes" expander
   (`render_modes_overview`) built by `visuals.modes_table_html`. Its Workflow column reuses each mode's
-  own `MODE_INTROS` step string and its cost column calls `modes.estimated_gemini_requests`, so only the
+  steps via `workflow_label()` and its cost column calls `modes.estimated_gemini_requests`, so only the
   retrieval/best-for text lives in `MODE_FACTS` and the table can't drift from the cards. It renders in
-  the no-index branch too, so the designs can be read before anything is uploaded. Results are stored per mode in
+  the no-index branch too, so the designs can be read before anything is uploaded.
+- **Mode copy lives in `ui/mode_copy.py`**, in four tables keyed by mode: `MODE_INTROS` (one paragraph),
+  `MODE_STEPS` (`(number, short label, detail)` per step), `MODE_GUIDANCE` (`(good fit when, not the
+  best fit when)`) and `MODE_FACTS` (retrieval method, best-for). `MODE_STEPS` is the single source for
+  both views — `workflow_label()` joins the short labels for the overview table's Workflow column, and
+  `visuals.mode_detail_html` spells the details out in the selected mode's expander — so the table and
+  the card cannot describe different pipelines. Adding a mode means adding a row to all four. Results are stored per mode in
   `st.session_state.results_by_mode`, and the page renders the selected mode's saved result with that
   mode's own `render_*` cards (numbered from 7). Classic and evaluation run through `run_query`, which
   lights up the big flowchart; agentic, vectorless and keyword run through `run_mode`, compare through

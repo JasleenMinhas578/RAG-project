@@ -14,6 +14,7 @@ from src.visuals import (
     find_overlap,
     hits_html,
     hover_text,
+    mode_detail_html,
     modes_table_html,
     neighbors_html,
     outline_html,
@@ -176,3 +177,21 @@ def test_modes_table_escapes_text_it_is_given():
 
     assert "<script>" not in out
     assert "&lt;script&gt;" in out and "a &amp; b" in out
+
+
+def test_mode_detail_lists_every_step_and_both_kinds_of_guidance():
+    steps = [("7", "Embed the question", "It becomes numbers."), ("8", "Retrieve", "FAISS finds chunks.")]
+
+    out = mode_detail_html(steps, ["a normal question"], ["you need a quality score"])
+
+    assert out.count('class="rag-md-n"') == 2
+    assert "Embed the question" in out and "FAISS finds chunks." in out
+    assert "a normal question" in out and "you need a quality score" in out
+    assert out.index("rag-md-good") < out.index("rag-md-bad")  # good fit first, caveats after
+
+
+def test_mode_detail_escapes_the_text_it_is_given():
+    out = mode_detail_html([("7", "<b>x</b>", "a & b")], ["<script>"], ["fine"])
+
+    assert "<b>x</b>" not in out and "&lt;b&gt;x&lt;/b&gt;" in out
+    assert "<script>" not in out and "a &amp; b" in out

@@ -90,12 +90,27 @@ numbered steps, and uses only local tools plus Gemini. No other paid service is 
 | **Compare modes** | Runs one question through 2–4 modes and shows answers, sources and quality scores side by side, with a summary table | one run per mode, each graded |
 
 The app shows this same comparison in step 6, under **Compare all six modes**, with each mode's
-numbered workflow — it's there before you upload anything, so you can read the designs first.
+numbered workflow — it's there before you upload anything, so you can read the designs first. Picking
+a mode then opens **"What <mode> does, and when to use it"**, which spells out its steps and says when
+it fits and when it doesn't.
+
+### Which mode to use when
+
+| Mode | Reach for it when | Avoid it when |
+|---|---|---|
+| **Classic RAG** | A normal question whose answer is in your documents; you want the fastest, cheapest answer, or a baseline to compare against | You need to know how good the answer is, or most questions aren't about the documents at all |
+| **Agentic RAG** | Mixed conversations, where some questions need the documents and some don't — greetings and general knowledge skip the search entirely | Every question is about your documents: the router then costs an extra request on each one and changes nothing |
+| **Vectorless RAG** | Documents with real headings (reports, manuals, contracts); the answer sits in one clearly-titled section; you want retrieval with no vector database at all | Long, unstructured documents whose headings don't describe what's under them — Gemini only ever sees the outline, so anything it doesn't hint at is invisible |
+| **Keyword vs. vector search** | Working out why a search missed; questions with exact names, codes or rare words; deciding whether you need hybrid search | You just want the best answer — it answers from the keyword hits alone, to show that search on its own. It's a diagnostic view |
+| **RAG evaluation** | Checking quality before you trust a setup; comparing chunk size, `top_k` or minimum similarity with a score rather than a hunch | Everyday questions: it doubles the cost of every one |
+| **Compare modes** | Deciding which design suits your documents; a demo or write-up that needs to show the difference | Everyday use — it's by far the most expensive mode |
 
 The **Show quality scores** toggle adds the judge's four scores to any mode's answer (one extra call).
-Vectorless RAG works best on structured documents with clear headings. The judge only sees the
-retrieved text, so "Correct" means "matches the retrieved text", and a model grading an AI answer
-tends to be generous.
+
+Two things worth knowing before you trust the numbers. The judge only sees the retrieved text, so
+"Correct" means "matches the retrieved text", and a model grading an AI answer tends to be generous.
+And **Compare modes** runs the 2–4 modes *you pick* (not a fixed set), costing 2–3 requests each
+including its judge call — so 4 to 12 requests for one question. The app shows the count before you ask.
 
 These modes teach the ideas from the notebooks in `archive/` (LangGraph agentic RAG, PageIndex
 vectorless RAG, Typesense keyword search, LangSmith evaluation) without their paid services.
@@ -246,12 +261,29 @@ RAG-project/
 
 ### How the modules fit together
 
+`src/` is the pipeline and knows nothing about Streamlit, which is what lets you import it into your
+own code. `ui/` is everything the app draws, and sits on top of it.
+
 ```mermaid
-flowchart LR
-    DL[data_loader.py<br/>files → Documents] --> EP[embedding.py<br/>chunk + embed]
-    EP --> VS[vectorstore.py<br/>FAISS index]
-    VS --> RS[search.py<br/>retrieve → prompt → Gemini]
-    CFG[config.py] -.defaults.-> EP & VS & RS
+flowchart TB
+    subgraph src["src/ — the pipeline (no Streamlit)"]
+        direction LR
+        DL[data_loader.py<br/>files → Documents] --> EP[embedding.py<br/>chunk + embed]
+        EP --> VS[vectorstore.py<br/>FAISS index]
+        VS --> RS[search.py<br/>retrieve → prompt → Gemini]
+        RS --> MD[modes.py<br/>the six RAG designs]
+        CFG[config.py] -.defaults.-> EP & VS & RS & MD
+        VIS[visuals.py<br/>SVG, HTML, Plotly]
+    end
+    subgraph ui["ui/ — what the app draws"]
+        direction LR
+        RUN[runners.py<br/>run, save, rerun] --> SEC[indexing.py · query.py<br/>mode_cards.py]
+        CMP[components.py<br/>shared widgets] --> SEC
+        COPY[mode_copy.py<br/>mode explanations] --> SEC
+    end
+    APP[streamlit_app.py<br/>settings · layout · order] --> ui
+    RUN --> MD
+    SEC -.draws with.-> VIS
 ```
 
 ---

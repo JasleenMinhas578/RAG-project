@@ -68,6 +68,19 @@ CSS = """
 .rag-mode .h {font-weight:700; font-size:1.05rem; margin-bottom:.2rem}
 .rag-mode p {margin:0 0 .35rem}
 .rag-mode .s {font-size:.9rem; opacity:.8}
+.rag-md {margin:.1rem 0 .6rem}
+.rag-md-h {font-size:.82rem; text-transform:uppercase; letter-spacing:.03em; opacity:.75; font-weight:700;
+  margin:.1rem 0 .35rem}
+.rag-md-steps {list-style:none; margin:0 0 .8rem; padding:0; display:flex; flex-direction:column; gap:.4rem}
+.rag-md-steps li {display:flex; gap:.55rem; align-items:flex-start; line-height:1.5}
+.rag-md-n {flex:none; min-width:2.1rem; text-align:center; border-radius:6px; padding:.05rem .35rem;
+  background:rgba(22,163,74,.15); border:1px solid rgba(22,163,74,.4); font-weight:700; font-size:.82rem}
+.rag-md-cols {display:flex; flex-wrap:wrap; gap:.8rem}
+.rag-md-cols > div {flex:1 1 15rem; border-radius:10px; padding:.6rem .8rem; border:1px solid rgba(127,127,127,.25)}
+.rag-md-good {border-left:4px solid #16A34A !important}
+.rag-md-bad {border-left:4px solid #CA8A04 !important}
+.rag-md-cols ul {margin:0; padding-left:1.1rem; line-height:1.5}
+.rag-md-cols li {margin:.15rem 0}
 .rag-mt-wrap {overflow-x:auto; margin:.2rem 0 .6rem}
 .rag-mt {border-collapse:collapse; width:100%; font-size:.9rem; line-height:1.45}
 .rag-mt th, .rag-mt td {text-align:left; vertical-align:top; padding:.55rem .7rem;
@@ -400,6 +413,29 @@ def outline_html(sections, picked_ids=()) -> str:
         else:
             rows.append(f'<div class="rag-outline-item"><span class="sid">{s["id"]}</span>{title}</div>')
     return f'<div class="rag-outline">{"".join(rows)}</div>'
+
+
+def mode_detail_html(steps, good_for, not_for) -> str:
+    """The selected mode's card: what it will do, step by step, then when it fits and when it doesn't.
+
+    `steps` are (number, label, detail) triples; the two lists are plain strings. Everything is
+    escaped here, so callers pass raw text.
+    """
+    step_rows = "".join(
+        f'<li><span class="rag-md-n">{html.escape(number)}</span>'
+        f'<div><b>{html.escape(label)}</b><br>{html.escape(detail)}</div></li>'
+        for number, label, detail in steps
+    )
+    def bullets(items):
+        return "".join(f"<li>{html.escape(item)}</li>" for item in items)
+    return (
+        '<div class="rag-md">'
+        f'<div class="rag-md-h">What happens when you ask a question</div><ol class="rag-md-steps">{step_rows}</ol>'
+        '<div class="rag-md-cols">'
+        f'<div class="rag-md-good"><div class="rag-md-h">Good fit when</div><ul>{bullets(good_for)}</ul></div>'
+        f'<div class="rag-md-bad"><div class="rag-md-h">Not the best fit when</div><ul>{bullets(not_for)}</ul></div>'
+        '</div></div>'
+    )
 
 
 def modes_table_html(rows) -> str:
