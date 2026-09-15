@@ -1,8 +1,11 @@
+import logging
+import pickle
+
 import numpy as np
 import pytest
 
 import src.vectorstore as vectorstore
-from src.vectorstore import FaissVectorStore
+from src.vectorstore import FaissVectorStore, manifest_mismatches
 
 
 @pytest.fixture
@@ -34,12 +37,48 @@ def test_top_k_larger_than_the_index_returns_only_real_hits(store):
     assert len(query(store, top_k=10)) == 3
 
 
-def test_save_and_load_round_trip(store, tmp_path):
+def test_save_and_load_round_trip(store, tmp_path, caplog):
     store.save()
     loaded = FaissVectorStore(persist_dir=str(tmp_path / "store"))
-    loaded.load()
+    with caplog.at_level(logging.WARNING):
+        loaded.load()
     assert loaded.ntotal == 3
     assert loaded.metadata == store.metadata
+    assert "embedding model" not in caplog.text  # same settings: nothing to warn about
+
+
+def test_loading_with_a_different_embedding_model_warns(store, tmp_path, caplog):
+    store.save()
+    other = FaissVectorStore(persist_dir=str(tmp_path / "store"), embedding_model="some-other-model")
+    with caplog.at_level(logging.WARNING):
+        other.load()
+    assert other.ntotal == 3  # still usable, but the user has been told why it may be wrong
+    assert "some-other-model" in caplog.text
+    assert store.embedding_model in caplog.text
+
+
+def test_an_index_saved_before_manifests_loads_without_warnings(store, tmp_path, caplog):
+    store.save()
+    # older stores pickled the bare metadata list
+    with open(tmp_path / "store" / "metadata.pkl", "wb") as f:
+        pickle.dump(store.metadata, f)
+    loaded = FaissVectorStore(persist_dir=str(tmp_path / "store"))
+    with caplog.at_level(logging.WARNING):
+        loaded.load()
+    assert loaded.metadata == store.metadata
+    assert caplog.text == ""
+
+
+def test_manifest_mismatches_reports_each_changed_setting():
+    saved = {"embedding_model": "old-model", "chunk_size": 500, "chunk_overlap": 100}
+    current = {"embedding_model": "new-model", "chunk_size": 800, "chunk_overlap": 100}
+
+    warnings = manifest_mismatches(saved, current)
+
+    assert len(warnings) == 2  # overlap is unchanged, so it is not reported
+    assert "old-model" in warnings[0] and "new-model" in warnings[0]
+    assert "chunk_size=500" in warnings[1]
+    assert manifest_mismatches(saved, saved) == []
 
 
 def test_creating_a_store_does_not_create_its_directory(tmp_path):

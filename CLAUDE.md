@@ -63,9 +63,14 @@ The pipeline modules log through `logging.getLogger(__name__)`; nothing prints. 
 warnings (such as a skipped file) reach its terminal.
 
 1. **`data_loader.load_all_documents(data_dir)`** — walks a directory recursively and loads every
-   supported file type via the `LOADERS` table. JSON uses a small custom loader: langchain's
-   `JSONLoader` requires a `jq_schema` and the `jq` package. A file that fails to parse is logged as
-   a warning and skipped. The Streamlit app writes uploads to a temp directory and calls this too.
+   supported file type via the `LOADERS` table, which maps a lowercased extension to a loader, so
+   matching is case-insensitive (`REPORT.PDF` loads like `report.pdf`). JSON uses a small custom
+   loader: langchain's `JSONLoader` requires a `jq_schema` and the `jq` package. Markdown is loaded
+   as plain text so its `#` headings survive into the chunks, which is what `modes.build_outline`
+   reads. A file that fails to parse is logged as a warning and skipped; the app also lists any
+   uploaded file that produced no text (`index_data["skipped"]`), since its terminal warnings aren't
+   in front of the user. `UPLOAD_TYPES` feeds the Streamlit uploader's `type=` so the accepted
+   extensions can't drift from the ones this table can read.
 
 2. **`embedding`** — `get_embedding_model(name)` is an `lru_cache`d loader, so the
    `SentenceTransformer` is loaded once per process and shared by every `EmbeddingPipeline`,
@@ -80,7 +85,10 @@ warnings (such as a skipped file) reach its terminal.
    `persist_dir` (construction doesn't). `search`/`query` return `{index, distance, similarity,
    metadata}`; `similarity` is true cosine similarity computed from the vector reconstructed from the
    index (FAISS ranks by L2 distance; for these unit-length embeddings the order is the same). The
-   embedding model used to query must match the one that built the index — nothing checks this.
+   embedding model used to query must match the one that built the index: `save()` records the model
+   and chunk settings in the pickle alongside the metadata, and `load()` runs `manifest_mismatches`
+   and logs a warning for each difference (it still loads — a mismatched index is wrong, not
+   unreadable). A pickle holding a bare list is a pre-manifest store and is loaded without warnings.
 
 4. **`search`** — `RAGSearch` splits retrieval and generation into visible steps:
    `retrieve` → `filter_by_similarity` (module function; returns `(kept, dropped)`) →

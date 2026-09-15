@@ -49,7 +49,7 @@ flowchart LR
 
 | # | Step | What you see in the app |
 |---|---|---|
-| 1 | **Upload documents** | Drag in up to 5 files (PDF, TXT, CSV, DOCX, XLSX, JSON) |
+| 1 | **Upload documents** | Drag in up to 5 files (PDF, TXT, MD, CSV, DOCX, XLSX, JSON) |
 | 2 | **Load & parse** | The plain text extracted from each file (e.g. one piece per PDF page) |
 | 3 | **Split into chunks** | Chunks per file, and the overlap between neighboring chunks highlighted |
 | 4 | **Embed chunks** | A chunk's 384-number embedding as numbers and as a bar chart, plus three ways to see which chunks are close in meaning: a 2D map, a rotatable 3D map (both PCA, with the share of variance each keeps), or a plain nearest-neighbors list |
@@ -218,7 +218,7 @@ RAG-project/
 ├── app.py                  # Minimal CLI example using the same pipeline
 ├── src/
 │   ├── config.py           # Limits and defaults (file/chunk limits, chunk size, top_k, thresholds, model names)
-│   ├── data_loader.py      # Loads PDF/TXT/CSV/XLSX/DOCX/JSON into LangChain Documents
+│   ├── data_loader.py      # Loads PDF/TXT/MD/CSV/XLSX/DOCX/JSON into LangChain Documents
 │   ├── embedding.py        # Chunking + local embeddings (the model is loaded once and shared)
 │   ├── vectorstore.py      # FAISS index wrapper: add, search, save/load
 │   ├── search.py           # RAGSearch: retrieve → filter → build prompt → generate; grounding score
@@ -267,7 +267,8 @@ These limits keep the demo fast on a laptop and within Gemini's free-tier quota.
 costs one Gemini call, or two if you turn on the with/without-documents comparison.
 
 > If you change the embedding model, rebuild the index. Queries must be embedded with the same
-> model that built the index, and nothing checks this automatically.
+> model that built the index. A saved index records the model it was built with, so loading one
+> built by a different model logs a warning — it still loads, but its answers will be wrong.
 
 ---
 

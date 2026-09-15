@@ -18,14 +18,28 @@ def _load_json(path: str) -> List[Document]:
     return [Document(page_content=json.dumps(data, indent=2, ensure_ascii=False), metadata={"source": path})]
 
 
-LOADERS = [
-    ("PDF", "*.pdf", lambda path: PyPDFLoader(path).load()),
-    ("TXT", "*.txt", lambda path: TextLoader(path).load()),
-    ("CSV", "*.csv", lambda path: CSVLoader(path).load()),
-    ("Excel", "*.xlsx", lambda path: UnstructuredExcelLoader(path).load()),
-    ("Word", "*.docx", lambda path: Docx2txtLoader(path).load()),
-    ("JSON", "*.json", _load_json),
-]
+def _load_plain_text(path: str) -> List[Document]:
+    return TextLoader(path).load()
+
+
+# Extension -> (label for logs, loader). Keyed by extension rather than by glob pattern so
+# matching can be case-insensitive: a file named REPORT.PDF is as loadable as report.pdf.
+# Markdown is read as plain text, which keeps its `#` headings in the chunk text -- that's
+# what modes.build_outline reads to build the vectorless outline.
+LOADERS = {
+    ".pdf": ("PDF", lambda path: PyPDFLoader(path).load()),
+    ".txt": ("TXT", _load_plain_text),
+    ".md": ("Markdown", _load_plain_text),
+    ".markdown": ("Markdown", _load_plain_text),
+    ".csv": ("CSV", lambda path: CSVLoader(path).load()),
+    ".xlsx": ("Excel", lambda path: UnstructuredExcelLoader(path).load()),
+    ".docx": ("Word", lambda path: Docx2txtLoader(path).load()),
+    ".json": ("JSON", _load_json),
+}
+
+# Extensions without the leading dot, for Streamlit's file_uploader `type=` argument, so the
+# app's accepted list can't drift away from what this module can actually load.
+UPLOAD_TYPES = [ext.lstrip(".") for ext in LOADERS]
 
 
 def load_all_documents(data_dir: str) -> List[Any]:
@@ -35,15 +49,21 @@ def load_all_documents(data_dir: str) -> List[Any]:
     """
     data_path = Path(data_dir).resolve()
     documents = []
-    for kind, pattern, load in LOADERS:
-        for path in sorted(data_path.glob(f"**/{pattern}")):
-            try:
-                loaded = load(str(path))
-            except Exception as exc:  # any parser error: skip this file, keep the rest
-                logger.warning("Skipped %s file %s: %s", kind, path.name, exc)
-                continue
-            logger.debug("Loaded %d %s document(s) from %s", len(loaded), kind, path)
-            documents.extend(loaded)
+    for path in sorted(data_path.rglob("*")):
+        if not path.is_file():
+            continue
+        entry = LOADERS.get(path.suffix.lower())
+        if entry is None:
+            logger.debug("Ignored unsupported file %s", path)
+            continue
+        kind, load = entry
+        try:
+            loaded = load(str(path))
+        except Exception as exc:  # any parser error: skip this file, keep the rest
+            logger.warning("Skipped %s file %s: %s", kind, path.name, exc)
+            continue
+        logger.debug("Loaded %d %s document(s) from %s", len(loaded), kind, path)
+        documents.extend(loaded)
     logger.info("Loaded %d documents from %s", len(documents), data_path)
     return documents
 

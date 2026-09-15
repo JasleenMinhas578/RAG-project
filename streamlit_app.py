@@ -19,7 +19,7 @@ import streamlit as st
 from sklearn.decomposition import PCA
 
 from src import config, modes
-from src.data_loader import load_all_documents
+from src.data_loader import UPLOAD_TYPES, load_all_documents
 from src.embedding import EmbeddingPipeline
 from src.search import RAGSearch, filter_by_similarity, friendly_error, grounding_score
 from src.vectorstore import FaissVectorStore
@@ -274,6 +274,10 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
         st.session_state.index_data = {
             "files": [os.path.basename(f.name) for f in uploaded_files],
             "per_file": per_file,
+            # load_all_documents only logs a file it couldn't parse, and the app's terminal is not
+            # in front of the user, so name them on the page instead of letting them vanish.
+            "skipped": [os.path.basename(f.name) for f in uploaded_files
+                        if os.path.basename(f.name) not in per_file],
             "n_docs": len(docs),
             "texts": texts,
             "sources": sources,
@@ -429,6 +433,9 @@ def render_load(ix):
                 "Each file is opened and its plain text is extracted. A PDF gives one piece of text per page, "
                 "a CSV file one per row, and a text or Word file one piece for the whole file. Layout and "
                 "images are dropped; only the words remain.")
+    if ix.get("skipped"):
+        st.warning("No text could be read from " + ", ".join(ix["skipped"])
+                   + ". The file may be empty, password-protected, or a scanned image of text.")
     c1, c2, c3 = st.columns(3)
     c1.metric("Files", len(ix["per_file"]))
     c2.metric("Pieces of text extracted", ix["n_docs"], help="Pages, rows, or whole files, depending on the file type.")
@@ -1023,7 +1030,7 @@ with st.container(border=True):
                 "Add the files you want to ask questions about. The app answers only from these files, "
                 "never from the internet.")
     uploaded_files = st.file_uploader(
-        "PDF, TXT, CSV, DOCX, XLSX or JSON", type=["pdf", "txt", "csv", "docx", "xlsx", "json"],
+        "PDF, TXT, MD, CSV, DOCX, XLSX or JSON", type=UPLOAD_TYPES,
         accept_multiple_files=True,
         help=f"Up to {config.MAX_FILES} files and {config.MAX_TOTAL_MB} MB in total.",
     )

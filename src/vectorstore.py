@@ -11,6 +11,37 @@ from src.embedding import EmbeddingPipeline, get_embedding_model
 
 logger = logging.getLogger(__name__)
 
+# Only the embedding model has to match for an existing index to be queryable; chunk size and
+# overlap are baked into the vectors and just describe how the saved index was built.
+CRITICAL_SETTING = "embedding_model"
+
+
+def manifest_mismatches(saved: dict, current: dict) -> list:
+    """Plain-language warnings about a saved index built with settings other than `current`.
+
+    Returns an empty list for a matching index, and for one saved before manifests existed
+    (nothing was recorded, so there is nothing to compare).
+    """
+    if not saved:
+        return []
+    warnings = []
+    for key, value in current.items():
+        was = saved.get(key)
+        if was is None or was == value:
+            continue
+        if key == CRITICAL_SETTING:
+            warnings.append(
+                f"This index was built with embedding model {was!r} but is being queried with "
+                f"{value!r}. The two models produce unrelated vectors, so results will look "
+                f"plausible but be wrong. Rebuild the index, or query it with {was!r}."
+            )
+        else:
+            warnings.append(
+                f"This index was built with {key}={was}, not {value}. Existing vectors keep the "
+                f"setting they were built with; {value} applies only after a rebuild."
+            )
+    return warnings
+
 
 class FaissVectorStore:
     def __init__(
@@ -50,17 +81,38 @@ class FaissVectorStore:
             self.metadata.extend(metadatas)
         logger.info("Added %d vectors to the FAISS index", embeddings.shape[0])
 
+    @property
+    def manifest(self) -> dict:
+        """The settings that produced the vectors. Querying an index with a different
+        embedding model compares numbers from two different vector spaces, which returns
+        confident-looking nonsense rather than an error -- so it is recorded and checked."""
+        return {
+            "embedding_model": self.embedding_model,
+            "chunk_size": self.chunk_size,
+            "chunk_overlap": self.chunk_overlap,
+        }
+
     def save(self):
         os.makedirs(self.persist_dir, exist_ok=True)
         faiss.write_index(self.index, os.path.join(self.persist_dir, "faiss.index"))
         with open(os.path.join(self.persist_dir, "metadata.pkl"), "wb") as f:
-            pickle.dump(self.metadata, f)
+            pickle.dump({"manifest": self.manifest, "metadata": self.metadata}, f)
         logger.info("Saved FAISS index and metadata to %s", self.persist_dir)
 
     def load(self):
+        """Load a saved index, warning if it was built with different settings than this store's."""
         self.index = faiss.read_index(os.path.join(self.persist_dir, "faiss.index"))
         with open(os.path.join(self.persist_dir, "metadata.pkl"), "rb") as f:
-            self.metadata = pickle.load(f)
+            payload = pickle.load(f)
+        # Stores saved before the manifest existed pickled the bare metadata list.
+        if isinstance(payload, dict):
+            self.metadata = payload["metadata"]
+            saved = payload.get("manifest", {})
+        else:
+            self.metadata = payload
+            saved = {}
+        for warning in manifest_mismatches(saved, self.manifest):
+            logger.warning("%s", warning)
         logger.info("Loaded FAISS index and metadata from %s", self.persist_dir)
 
     def search(self, query_embedding: np.ndarray, top_k: int = 5):
