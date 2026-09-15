@@ -90,9 +90,13 @@ numbered steps, and uses only local tools plus Gemini. No other paid service is 
 | **Compare modes** | Runs one question through 2–4 modes and shows answers, sources and quality scores side by side, with a summary table | one run per mode, each graded |
 
 The app shows this same comparison in step 6, under **Compare all six modes**, with each mode's
-numbered workflow — it's there before you upload anything, so you can read the designs first. Picking
-a mode then opens **"What <mode> does, and when to use it"**, which spells out its steps and says when
-it fits and when it doesn't.
+workflow — it's there before you upload anything, so you can read the designs first. Picking a mode
+then opens **"What <mode> does, and when to use it"**, which numbers its steps, says what each one
+does, and lists when it fits and when it doesn't.
+
+Each mode numbers its own steps from 7, continuing the indexing stage, so the numbers match the
+section headers you scroll through in that mode. They're left out of the comparison table above,
+where six independent numberings side by side would suggest step 8 means the same thing in each.
 
 ### Which mode to use when
 

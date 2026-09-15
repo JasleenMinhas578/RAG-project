@@ -88,7 +88,7 @@ MODE_STEPS = {
          "One Gemini call answers from the keyword hits, so you can judge that search on its own."),
     ],
     modes.MODE_EVALUATION: [
-        ("7 to 10", "as in classic RAG",
+        ("7 to 10", "Everything classic RAG does",
          "The full classic pipeline runs unchanged: embed, retrieve, build the prompt, answer."),
         ("11", "Judge the answer",
          "A second Gemini call receives the question, the answer and the retrieved text, and scores the answer 1 to "
@@ -156,8 +156,15 @@ MODE_GUIDANCE = {
 
 
 def workflow_label(mode: str) -> str:
-    """The mode's steps as one line, for the overview table's Workflow column."""
-    return " · ".join(f"{number} {label}" for number, label, _ in MODE_STEPS[mode])
+    """The mode's steps as one line, in order, for the overview table and the mode card's summary.
+
+    Deliberately without step numbers. Every mode restarts its numbering at 7, so side by side in a
+    table the numbers look comparable when they are not: "8" is Retrieve in classic RAG, "Gemini
+    picks sections" in vectorless and "See where they differ" in keyword mode. The numbers earn
+    their place on the page itself, where they match the numbered section headers you scroll
+    through, and in the mode card's step list -- not in a comparison.
+    """
+    return " · ".join(label for _, label, _ in MODE_STEPS[mode])
 
 
 # (how the mode finds its text, what it suits) for the overview table in step 6. The workflow and
@@ -201,9 +208,11 @@ def render_modes_overview():
     without uploading anything first."""
     with st.expander("Compare all six modes"):
         st.html(modes_overview_table())
-        st.caption("Step numbers continue from the indexing stage, so every mode's first query step is 7. "
-                   "Only Classic RAG and RAG evaluation light up the big flowchart above; the others "
-                   "explain themselves in their own cards.")
+        st.caption("Each mode is a different path through the same indexed documents, so the workflows "
+                   "above line up in order, not step for step. Once you pick a mode, its own steps are "
+                   "numbered on the page, continuing from the indexing stage. Only Classic RAG and RAG "
+                   "evaluation light up the big flowchart above; the others explain themselves in their "
+                   "own cards.")
 
 
 def mode_intro(mode: str):

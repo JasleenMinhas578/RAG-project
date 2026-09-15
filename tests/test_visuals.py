@@ -157,16 +157,16 @@ def test_scores_html_shows_four_measures_and_missing_scores():
 def test_modes_table_renders_a_row_per_mode_with_its_steps_as_pills():
     rows = [
         {"mode": "Classic RAG", "retrieval": "Vector search", "best_for": "Most questions",
-         "workflow": "7 Embed the question \u00b7 8 Retrieve \u00b7 9 Build the prompt \u00b7 10 Answer", "calls": "1"},
+         "workflow": "Embed the question \u00b7 Retrieve \u00b7 Build the prompt \u00b7 Answer", "calls": "1"},
         {"mode": "Agentic RAG", "retrieval": "Only when the router asks", "best_for": "Mixed chats",
-         "workflow": "7 Decide \u00b7 8 Retrieve (only if needed) \u00b7 9 Answer", "calls": "2"},
+         "workflow": "Decide \u00b7 Retrieve (only if needed) \u00b7 Answer", "calls": "2"},
     ]
 
     out = modes_table_html(rows)
 
     assert out.count("<tr>") == 3  # one header row plus one per mode
     assert out.count('class="rag-mt-step"') == 7  # 4 steps + 3 steps
-    assert "8 Retrieve (only if needed)" in out
+    assert "Retrieve (only if needed)" in out
     assert ">1<" in out and ">2<" in out
 
 

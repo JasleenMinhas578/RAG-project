@@ -168,7 +168,9 @@ numbers match the flowchart.
   `FaissVectorStore.neighbors()`. Both maps default to 2D (reason in the `MAP_VIEWS` comment).
 - **RAG modes:** step 6 has a mode menu (`modes.MODES`), above it a "Compare all six modes" expander
   (`render_modes_overview`) built by `visuals.modes_table_html`. Its Workflow column reuses each mode's
-  steps via `workflow_label()` and its cost column calls `modes.estimated_gemini_requests`, so only the
+  steps via `workflow_label()`, which omits the step numbers on purpose (every mode restarts at 7, so
+  side by side the numbers read as comparable when they aren't), and its cost column calls
+  `modes.estimated_gemini_requests`, so only the
   retrieval/best-for text lives in `MODE_FACTS` and the table can't drift from the cards. It renders in
   the no-index branch too, so the designs can be read before anything is uploaded.
 - **Mode copy lives in `ui/mode_copy.py`**, in four tables keyed by mode: `MODE_INTROS` (one paragraph),
