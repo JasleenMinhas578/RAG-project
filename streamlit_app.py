@@ -44,7 +44,8 @@ with st.sidebar:
                            help="The longest a chunk can be. Smaller chunks are more precise but carry less "
                                 "surrounding context. Applies the next time you run indexing.")
     chunk_overlap = st.slider("Chunk overlap (characters)", 0, 400, config.DEFAULT_CHUNK_OVERLAP, step=50,
-                              help="How much text neighboring chunks can share. Applies the next time you run indexing.")
+                              help="How much text neighboring chunks can share. Applies the next time you run "
+                                   "indexing.")
     top_k = st.slider("Chunks to retrieve (top_k)", 1, 10, config.DEFAULT_TOP_K,
                       help="How many of the closest chunks are retrieved for each question.")
     min_similarity = st.slider("Minimum similarity", 0.0, 0.8, config.DEFAULT_MIN_SIMILARITY, step=0.05,
@@ -80,7 +81,8 @@ st.caption("This diagram shows Classic RAG. The other modes in the query stage e
 
 index_data = st.session_state.index_data
 
-stage_banner("index", "Indexing stage", "Runs once per upload. It turns your files into a searchable index. Steps 1 to 5.")
+stage_banner("index", "Indexing stage", "Runs once per upload. It turns your files into a searchable index. Steps 1 to "
+                                        "5.")
 
 with st.container(border=True):
     step_header(1, "Upload documents", "index",
@@ -127,7 +129,8 @@ else:
         st.caption("Agentic RAG, Vectorless RAG and quality scores (always on in RAG evaluation and Compare modes) "
                    "make extra Gemini calls, so those answers take longer and use more of the free quota.")
         with st.form("ask_form", border=False):
-            question = st.text_input("Your question", placeholder="For example: What is the main idea of this document?")
+            question = st.text_input("Your question", placeholder="For example: What is the main idea of this "
+                                                                  "document?")
             with_without, judge, selected = False, True, []
             if mode == modes.MODE_COMPARE:
                 selected = st.multiselect("Modes to compare", modes.COMPARABLE_MODES,
@@ -160,7 +163,8 @@ else:
             elif mode == modes.MODE_COMPARE and len(selected) < 2:
                 st.warning("Pick at least two modes to compare.")
             elif mode in (modes.MODE_CLASSIC, modes.MODE_EVALUATION):
-                runners.run_query(asked_question, top_k, min_similarity, with_without, judge, mode, api_key, flow_placeholder)
+                runners.run_query(asked_question, top_k, min_similarity, with_without, judge, mode,
+                                  api_key, flow_placeholder)
             elif mode == modes.MODE_COMPARE:
                 runners.run_compare(asked_question, selected, settings, api_key, flow_placeholder)
             else:
@@ -175,12 +179,15 @@ else:
             cards = [query.render_embed_question, lambda r: query.render_retrieve(index_data, r), query.render_prompt,
                      lambda r: query.render_generate(r, show_scores=False), query.render_judge]
         elif mode == modes.MODE_AGENTIC:
-            cards = [mode_cards.render_agentic_decision, mode_cards.render_agentic_retrieval, mode_cards.render_agentic_answer]
+            cards = [mode_cards.render_agentic_decision, mode_cards.render_agentic_retrieval,
+                     mode_cards.render_agentic_answer]
         elif mode == modes.MODE_VECTORLESS:
-            cards = [lambda r: mode_cards.render_outline(index_data), lambda r: mode_cards.render_section_pick(index_data, r),
+            cards = [lambda r: mode_cards.render_outline(index_data),
+                     lambda r: mode_cards.render_section_pick(index_data, r),
                      mode_cards.render_vectorless_prompt, mode_cards.render_vectorless_answer]
         elif mode == modes.MODE_KEYWORD:
-            cards = [mode_cards.render_two_searches, mode_cards.render_search_differences, mode_cards.render_keyword_answer]
+            cards = [mode_cards.render_two_searches, mode_cards.render_search_differences,
+                     mode_cards.render_keyword_answer]
         else:
             cards = [mode_cards.render_compare_summary, mode_cards.render_compare_side_by_side]
         for card in cards:

@@ -339,11 +339,13 @@ def pick_sections(ask, question: str, sections, max_pick: int = MAX_PICKED_SECTI
     reason = str((data or {}).get("reason", "")).strip()
     if data is None:
         reason = "Gemini's reply couldn't be read, so no sections were picked."
-    return {"picked": picked[:max_pick], "reason": reason or "No reason given.", "raw": reply, "parsed": data is not None}
+    return {"picked": picked[:max_pick], "reason": reason or "No reason given.",
+            "raw": reply, "parsed": data is not None}
 
 
 def section_blocks(sections) -> list:
-    """Label picked sections like retrieved chunks, so citations ([#1]) and the colored prompt view work the same way."""
+    """Label picked sections like retrieved chunks, so citations ([#1]) and the colored prompt
+    view work the same way."""
     blocks = []
     for rank, s in enumerate(sections, start=1):
         body = s["text"] if len(s["text"]) <= SECTION_CHARS_IN_PROMPT else s["text"][:SECTION_CHARS_IN_PROMPT] + " …"
@@ -451,7 +453,8 @@ def judge_answer(ask, question: str, answer: str, blocks) -> dict:
         score = _score(item.get("score"))
         reason = str(item.get("reason", "")).strip()
         measures[key] = {"score": score,
-                         "reason": reason or ("No reason given." if score else "The judge's reply for this measure couldn't be read.")}
+                         "reason": reason or ("No reason given." if score else "The judge's reply for this measure "
+                                                                               "couldn't be read.")}
     return {"measures": measures, "parsed": bool(data), "raw": reply}
 
 

@@ -1,7 +1,7 @@
 import logging
 import os
 import pickle
-from typing import Any, List
+from typing import Any
 
 import faiss
 import numpy as np
@@ -62,7 +62,7 @@ class FaissVectorStore:
     def model(self):
         return get_embedding_model(self.embedding_model)
 
-    def build_from_documents(self, documents: List[Any]):
+    def build_from_documents(self, documents: list[Any]):
         logger.info("Building vector store from %d raw documents", len(documents))
         emb_pipe = EmbeddingPipeline(model_name=self.embedding_model, chunk_size=self.chunk_size,
                                      chunk_overlap=self.chunk_overlap)
@@ -73,7 +73,7 @@ class FaissVectorStore:
         self.add_embeddings(np.asarray(embeddings, dtype="float32"), metadatas)
         self.save()
 
-    def add_embeddings(self, embeddings: np.ndarray, metadatas: List[Any] = None):
+    def add_embeddings(self, embeddings: np.ndarray, metadatas: list[Any] = None):
         if self.index is None:
             self.index = faiss.IndexFlatL2(embeddings.shape[1])
         self.index.add(embeddings)
@@ -127,7 +127,7 @@ class FaissVectorStore:
         results = []
         query_vec = query_embedding[0]
         query_norm = np.linalg.norm(query_vec)
-        for idx, dist in zip(indices[0], distances[0]):
+        for idx, dist in zip(indices[0], distances[0], strict=True):
             if idx == -1:
                 continue
             meta = self.metadata[idx] if idx < len(self.metadata) else None

@@ -84,7 +84,8 @@ def render_outline(index_data):
                 "The app turns your documents into a short outline, like a table of contents, with one line per "
                 "section. It uses headings when the text has them (such as '2. Results' or '## Results'); otherwise "
                 "it uses the first sentence of each paragraph. This runs on your computer, when you indexed.")
-    term("Outline", "a list of section titles that shows where things are in a document, without the full text.", "query")
+    term("Outline", "a list of section titles that shows where things are in a document, without the full "
+                    "text.", "query")
     files = list(dict.fromkeys(s["source"] for s in sections))
     with_headings = {s["source"] for s in sections if s["kind"] == "heading"}
     decision_col, reason_col = st.columns(2)
@@ -152,7 +153,8 @@ def render_two_searches(result):
                 "The same question searches the same chunks twice. Keyword search finds exact word matches, and "
                 "vector search finds similar meaning, even with different words.")
     term("Keyword search (TF-IDF)", "gives a chunk a higher score when it contains words from your question, "
-         "especially words that are rare in your other chunks. It runs on your computer, with no search service.", "query")
+         "especially words that are rare in your other chunks. It runs on your computer, with no search "
+         "service.", "query")
     both = {r["index"] for r in result["results"]} & {r["index"] for r in result["vector_results"]}
     keyword_col, vector_col = st.columns(2, gap="large")
     with keyword_col:
@@ -238,7 +240,7 @@ def render_compare_side_by_side(result):
     runs = result["runs"]
     step_header(8, "Answers side by side", "query",
                 "Each column shows one mode's answer, what it used to write the answer, and its quality scores.")
-    for column, (mode, mode_result) in zip(st.columns(len(runs), gap="medium"), runs.items()):
+    for column, (mode, mode_result) in zip(st.columns(len(runs), gap="medium"), runs.items(), strict=True):
         with column:
             label(html.escape(mode))
             st.caption(compare_note(mode, mode_result))
@@ -254,6 +256,7 @@ def render_compare_side_by_side(result):
                     if not mode_result.get("sections_used"):
                         st.caption("Nothing.")
                 else:
-                    st.html(ranked_html(mode_result.get("results", []), QUERY_COLOR if mode != modes.MODE_KEYWORD else ACTIVE_COLOR,
+                    color = ACTIVE_COLOR if mode == modes.MODE_KEYWORD else QUERY_COLOR
+                    st.html(ranked_html(mode_result.get("results", []), color,
                                         "keyword score" if mode == modes.MODE_KEYWORD else "similarity", "Nothing."))
             render_quality_scores(mode_result)

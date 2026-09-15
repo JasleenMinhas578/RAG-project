@@ -29,7 +29,12 @@ Tests (no network, no Gemini calls, no model download):
 ```bash
 pytest                                            # whole suite
 pytest tests/test_search.py::test_cited_ranks     # one test
+ruff check .                                      # lint; config in pyproject.toml
 ```
+Ruff is configured for a 120-character line (the width this project was already written to) and
+skips `archive/`. E501 is off for `src/modes.py` alone: one line of `JUDGE_PROMPT` shows Gemini the
+exact JSON shape to reply with and cannot carry a `# noqa`, because that comment would be sent to
+the model as part of the prompt.
 
 Web app (the primary way to use this project):
 ```bash
@@ -125,11 +130,19 @@ Streamlit teaching app built directly on `src/` (no separate backend). The page 
 sections split into an Indexing stage (blue, steps 1–5) and a Query stage (green, steps 6–10); the
 numbers match the flowchart.
 
-- **Run vs. render are separate.** `run_indexing()` and `run_query()` do the work (showing live
-  progress in `st.status` and lighting up the flowchart), save every intermediate result to
-  `st.session_state.index_data` / `last_query`, then call `st.rerun()`. The `render_*` functions
-  draw each step purely from that saved state. Keep it this way: anything rendered inside the run
-  functions disappears on the next widget interaction.
+- **The page is split across `ui/`.** `streamlit_app.py` holds only the page itself: session-state
+  defaults, the sidebar, the layout, and the order the sections appear in. Everything it draws lives
+  in `ui/`: `components` (the shared widgets and `QUERY_STEP_IDS`/`clear_index_widgets`), `mode_copy`
+  (the per-mode explanatory text and the six-mode overview table), `runners` (the work), `indexing`
+  (steps 1–5), `query` (classic RAG, steps 7–11) and `mode_cards` (agentic, vectorless, keyword,
+  compare). `ui/components.py` is the leaf everything imports; nothing in `ui/` calls `st.*` at import
+  time, so `st.set_page_config` stays the first Streamlit call. The package is `ui`, not `app`, because
+  an `app/` package would shadow the `app.py` CLI entrypoint.
+- **Run vs. render are separate.** `ui/runners.py` does the work (showing live progress in `st.status`
+  and lighting up the flowchart), saves every intermediate result to `st.session_state.index_data` /
+  `results_by_mode`, then calls `st.rerun()`. The `render_*` functions in the section modules draw each
+  step purely from that saved state. Keep it this way: anything rendered inside the run functions
+  disappears on the next widget interaction. `start_query()` is the shared preamble for every mode.
 - **Flowchart** is shown with `st.markdown(..., unsafe_allow_html=True)` — not `st.html`, whose
   sanitizer strips `<svg>` entirely (verified on Streamlit 1.63). The SVG string must stay free of
   blank lines so markdown treats it as one raw HTML block (a test checks this). The pulse on the
@@ -154,8 +167,8 @@ numbers match the flowchart.
   `st.session_state.results_by_mode`, and the page renders the selected mode's saved result with that
   mode's own `render_*` cards (numbered from 7). Classic and evaluation run through `run_query`, which
   lights up the big flowchart; agentic, vectorless and keyword run through `run_mode`, compare through
-  `run_compare`, and those don't touch the big flowchart. `run_indexing` also builds `ix["outline"]` and
-  `ix["keyword_index"]`. Every extra Gemini call counts against the free tier, so keep call counts
+  `run_compare`, and those don't touch the big flowchart. `run_indexing` also builds `index_data["outline"]`
+  and `index_data["keyword_index"]`. Every extra Gemini call counts against the free tier, so keep call counts
   visible (`modes.estimated_gemini_requests`).
 - The with/without comparison is opt-in because it costs a second free-tier request per question.
 - All document text is `html.escape`d before going into `st.html` or Plotly hover text.

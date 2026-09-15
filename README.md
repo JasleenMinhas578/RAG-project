@@ -217,8 +217,15 @@ The modules log with Python's `logging` module instead of printing. Call
 
 ```
 RAG-project/
-├── streamlit_app.py        # Interactive web app that visualizes all 10 pipeline steps
+├── streamlit_app.py        # The page: settings, layout, and the order the sections appear in
 ├── app.py                  # Minimal CLI example using the same pipeline
+├── ui/                     # Everything the app draws (Streamlit); see ui/__init__.py for the map
+│   ├── components.py       # Shared widgets: stage banners, step headers, answer and prompt cards
+│   ├── mode_copy.py        # What each RAG mode is, and the six-mode comparison table
+│   ├── runners.py          # Does the work: run a stage, save to session state, rerun
+│   ├── indexing.py         # Indexing stage, steps 1 to 5
+│   ├── query.py            # Classic RAG, steps 7 to 11
+│   └── mode_cards.py       # Agentic, vectorless, keyword and compare cards
 ├── src/
 │   ├── config.py           # Limits and defaults (file/chunk limits, chunk size, top_k, thresholds, model names)
 │   ├── data_loader.py      # Loads PDF/TXT/MD/CSV/XLSX/DOCX/JSON into LangChain Documents
@@ -226,12 +233,13 @@ RAG-project/
 │   ├── vectorstore.py      # FAISS index wrapper: add, search, save/load
 │   ├── search.py           # RAGSearch: retrieve → filter → build prompt → generate; grounding score
 │   ├── modes.py            # Agentic, vectorless, keyword (TF-IDF) and evaluation (judge) RAG modes
-│   └── visuals.py          # App rendering helpers: flowchart SVG, HTML snippets, Plotly figures
+│   └── visuals.py          # Rendering that needs no Streamlit: flowchart SVG, HTML, Plotly figures
 ├── tests/                  # pytest suite
 ├── .streamlit/config.toml  # Streamlit settings (file watcher off, telemetry off)
 ├── archive/                # Earlier standalone tutorial notebooks (not used by the app)
 ├── requirements.txt        # Pinned runtime dependencies
-├── requirements-dev.txt    # Runtime dependencies + pytest
+├── requirements-dev.txt    # Runtime dependencies + pytest + ruff
+├── pyproject.toml          # Ruff lint configuration
 ├── pytest.ini
 └── CLAUDE.md               # Detailed architecture notes
 ```
@@ -280,6 +288,7 @@ costs one Gemini call, or two if you turn on the with/without-documents comparis
 ```bash
 pip install -r requirements-dev.txt
 pytest
+ruff check .        # lint: unused imports, undefined names, import order, likely bugs
 ```
 
 The tests cover the pipeline logic (cosine similarity, chunking, the similarity filter, citation

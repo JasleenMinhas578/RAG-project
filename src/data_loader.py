@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 from langchain_community.document_loaders import CSVLoader, Docx2txtLoader, PyPDFLoader, TextLoader
 from langchain_community.document_loaders.excel import UnstructuredExcelLoader
@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 logger = logging.getLogger(__name__)
 
 
-def _load_json(path: str) -> List[Document]:
+def _load_json(path: str) -> list[Document]:
     # langchain's JSONLoader needs a jq schema and the `jq` package; the whole file as
     # formatted text is enough for retrieval.
     with open(path, encoding="utf-8") as f:
@@ -18,7 +18,7 @@ def _load_json(path: str) -> List[Document]:
     return [Document(page_content=json.dumps(data, indent=2, ensure_ascii=False), metadata={"source": path})]
 
 
-def _load_plain_text(path: str) -> List[Document]:
+def _load_plain_text(path: str) -> list[Document]:
     return TextLoader(path).load()
 
 
@@ -46,7 +46,7 @@ UPLOAD_TYPES = [ext.lstrip(".") for ext in LOADERS]
 UPLOAD_TYPES_LABEL = ", ".join(t.upper() for t in UPLOAD_TYPES[:-1]) + f" or {UPLOAD_TYPES[-1].upper()}"
 
 
-def load_all_documents(data_dir: str) -> List[Any]:
+def load_all_documents(data_dir: str) -> list[Any]:
     """Load every supported file under data_dir (recursively) into LangChain documents.
 
     A file that fails to load is logged and skipped, so one bad file doesn't stop the rest.

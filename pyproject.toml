@@ -1,6 +1,7 @@
 # Lint config only -- this project installs from requirements.txt, not as a package.
 [tool.ruff]
-line-length = 110          # matches the style the code was already written in
+# 120 is the width this project was already written to (99th percentile of existing lines).
+line-length = 120
 # archive/ holds standalone tutorial notebooks kept for reference. They are independent of
 # src/ and of each other, are not wired into the app, and are deliberately left as they were.
 exclude = ["archive", ".venv"]
@@ -9,3 +10,10 @@ exclude = ["archive", ".venv"]
 # E/W pycodestyle, F pyflakes (unused imports, undefined names), I import order,
 # UP outdated syntax, B likely bugs (including mutable default arguments).
 select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# modes.py holds the Gemini prompt templates. One line of JUDGE_PROMPT shows the model the exact
+# single-line JSON shape to reply with, and it is 232 characters. It cannot carry a `# noqa`
+# comment, because everything on that line is prompt text that would be sent to Gemini, and
+# wrapping it would change a tuned prompt. E501 is off for this file for that reason alone.
+"src/modes.py" = ["E501"]

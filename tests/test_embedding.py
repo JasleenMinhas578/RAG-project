@@ -49,7 +49,7 @@ def test_chunks_respect_the_size_limit_and_overlap(model_loads):
     chunks = EmbeddingPipeline(chunk_size=200, chunk_overlap=50).chunk_documents([Document(page_content=text)])
     assert len(chunks) > 1
     assert all(len(c.page_content) <= 200 for c in chunks)
-    assert all(find_overlap(a.page_content, b.page_content) > 0 for a, b in zip(chunks, chunks[1:]))
+    assert all(find_overlap(a.page_content, b.page_content) > 0 for a, b in zip(chunks, chunks[1:], strict=False))
 
 
 def test_embed_chunks_reports_progress_after_each_batch(model_loads):

@@ -42,7 +42,8 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             if not docs:
                 mark(flow_placeholder, "load", "pending")
                 status.update(label="No text could be extracted", state="error")
-                st.error("No text could be extracted from the uploaded files. Scanned PDFs (images of text) are not supported.")
+                st.error("No text could be extracted from the uploaded files. Scanned PDFs (images of text) are not "
+                         "supported.")
                 return
             mark(flow_placeholder, "load", "done")
 
@@ -59,7 +60,9 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             mark(flow_placeholder, "embed_docs", "active")
             progress = st.progress(0.0)
             embeddings = np.asarray(pipe.embed_chunks(
-                chunks, progress_callback=lambda done, total: progress.progress(done / total, text=f"{done} of {total} chunks")
+                chunks,
+                progress_callback=lambda done, total: progress.progress(done / total,
+                                                                       text=f"{done} of {total} chunks")
             ), dtype="float32")
             mark(flow_placeholder, "embed_docs", "done")
 
@@ -68,10 +71,12 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             texts = [c.page_content for c in chunks]
             sources = [os.path.basename(c.metadata.get("source", "unknown")) for c in chunks]
             store = FaissVectorStore(embedding_model=config.DEFAULT_EMBEDDING_MODEL)
-            store.add_embeddings(embeddings, [{"text": t, "source": s} for t, s in zip(texts, sources)])
+            store.add_embeddings(embeddings, [{"text": t, "source": s} for t, s in zip(texts, sources, strict=True)])
             # One PCA with up to 3 components serves both maps: PCA components come in order of
             # importance, so the 2D map is simply the first two of the three.
-            pca = PCA(n_components=min(config.PCA_COMPONENTS, len(chunks)), random_state=config.PCA_RANDOM_STATE).fit(embeddings) if len(chunks) >= 2 else None
+            pca = (PCA(n_components=min(config.PCA_COMPONENTS, len(chunks)),
+                       random_state=config.PCA_RANDOM_STATE).fit(embeddings)
+                   if len(chunks) >= 2 else None)
             projected = pca.transform(embeddings) if pca is not None else None
             mark(flow_placeholder, "index", "done")
             status.update(label="Indexing complete", state="complete")
@@ -167,7 +172,8 @@ def run_query(question: str, top_k: int, min_similarity: float, compare: bool, j
 
         st.write("Step 8 · Finding the closest chunks…")
         mark(flow_placeholder, "retrieve", "active")
-        query_result["results"], query_result["dropped"] = filter_by_similarity(rag.retrieve(question, top_k=top_k), min_similarity)
+        query_result["results"], query_result["dropped"] = filter_by_similarity(
+            rag.retrieve(question, top_k=top_k), min_similarity)
         mark(flow_placeholder, "retrieve", "done")
 
         st.write("Step 9 · Building the prompt…")
@@ -215,10 +221,12 @@ def run_engine(mode: str, rag, index_data, question: str, settings: dict, progre
     if mode == modes.MODE_CLASSIC:
         return modes.run_classic(rag, question, settings["top_k"], settings["min_similarity"], progress)
     if mode == modes.MODE_AGENTIC:
-        return modes.run_agentic(rag, question, index_data["files"], settings["top_k"], settings["min_similarity"], progress)
+        return modes.run_agentic(rag, question, index_data["files"], settings["top_k"],
+                                 settings["min_similarity"], progress)
     if mode == modes.MODE_VECTORLESS:
         return modes.run_vectorless(rag, question, index_data["outline"], progress)
-    return modes.run_keyword(rag, question, index_data["keyword_index"], index_data["texts"], index_data["sources"], settings["top_k"],
+    return modes.run_keyword(rag, question, index_data["keyword_index"],
+                             index_data["texts"], index_data["sources"], settings["top_k"],
                              settings["min_similarity"], progress)
 
 

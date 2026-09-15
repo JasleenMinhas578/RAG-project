@@ -58,10 +58,12 @@ def render_retrieve(index_data, query_result):
                              help="Same chunks, same colors. 3D can be rotated with the mouse.")
                     if has_3d else "2D view")
             three_d = view == "3D view"
-            st.plotly_chart(retrieval_map_figure(index_data, query_result, three_d=three_d), width="stretch", config=map_config(three_d))
+            st.plotly_chart(retrieval_map_figure(index_data, query_result, three_d=three_d),
+                            width="stretch", config=map_config(three_d))
             st.caption(f"The {'green diamond' if three_d else 'star'} is your question. Dotted lines connect it to "
                        "the chunks sent to Gemini, labeled #1 (closest) onward. Hollow gray circles were retrieved "
-                       f"but scored too low to send. The ranking uses all {index_data['embeddings'].shape[1]} numbers, so "
+                       f"but scored too low to send. The ranking uses all "
+                       f"{index_data['embeddings'].shape[1]} numbers, so "
                        "on a squeezed map a gray dot can look closer than a picked one.")
             render_variance(index_data)
         else:
@@ -81,7 +83,8 @@ def render_prompt(query_result):
         st.warning("No prompt was built, because no retrieved chunk reached the minimum similarity.")
         return
     st.html(prompt_html(query_result["prompt"], query_result["blocks"], query_result["question"]))
-    st.caption(f"{len(query_result['prompt']):,} characters sent. Faded text is the instruction, colored blocks are the "
+    st.caption(f"{len(query_result['prompt']):,} characters sent. Faded text is the instruction, "
+               "colored blocks are the "
                "context, and the green highlight is your question.")
     raw_prompt_expander(query_result["prompt"])
 

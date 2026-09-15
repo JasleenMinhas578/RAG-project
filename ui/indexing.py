@@ -39,7 +39,8 @@ def render_load(index_data):
                    + ". The file may be empty, password-protected, or a scanned image of text.")
     files_col, pieces_col, chars_col = st.columns(3)
     files_col.metric("Files", len(index_data["per_file"]))
-    pieces_col.metric("Pieces of text extracted", index_data["n_docs"], help="Pages, rows, or whole files, depending on the file type.")
+    pieces_col.metric("Pieces of text extracted", index_data["n_docs"],
+                      help="Pages, rows, or whole files, depending on the file type.")
     chars_col.metric("Characters extracted", f"{sum(v['chars'] for v in index_data['per_file'].values()):,}")
     st.dataframe(
         pd.DataFrame([{"file": name, "pieces of text": v["pieces"], "characters": v["chars"]}
@@ -49,7 +50,9 @@ def render_load(index_data):
     with st.expander("See the text extracted from each file"):
         for name, v in index_data["per_file"].items():
             label(html.escape(name))
-            text_box(v["preview"] + ("…" if len(v["preview"]) >= config.PREVIEW_CHARS else "") if v["preview"] else "(no text found)")
+            preview = v["preview"]
+            text_box(preview + ("…" if len(preview) >= config.PREVIEW_CHARS else "")
+                     if preview else "(no text found)")
 
 
 def render_chunk(index_data):
@@ -65,7 +68,8 @@ def render_chunk(index_data):
     count_col, average_col, maximum_col, overlap_col = st.columns(4)
     count_col.metric("Chunks created", len(texts))
     average_col.metric("Average length", f"{int(np.mean([len(t) for t in texts]))} chars")
-    maximum_col.metric("Maximum chunk size", f"{index_data['chunk_size']} chars", help="Change this in the sidebar, then run again.")
+    maximum_col.metric("Maximum chunk size", f"{index_data['chunk_size']} chars",
+                       help="Change this in the sidebar, then run again.")
     overlap_col.metric("Overlap setting", f"{index_data['chunk_overlap']} chars")
 
     counts = pd.Series(sources).value_counts(sort=False)
@@ -173,7 +177,8 @@ def render_embed(index_data):
 
 
 def render_index(index_data):
-    texts, sources, embeddings, store = index_data["texts"], index_data["sources"], index_data["embeddings"], index_data["store"]
+    texts, sources = index_data["texts"], index_data["sources"]
+    embeddings, store = index_data["embeddings"], index_data["store"]
     dims = embeddings.shape[1]
     step_header(5, "Store in the FAISS index (the vector database)", "index",
                 "All embeddings are saved in a FAISS index. It is built to answer one question very fast: "

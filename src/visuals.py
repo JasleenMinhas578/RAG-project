@@ -135,9 +135,11 @@ FLOW_STEPS = [
     ("load", 2, "index", 1, ("Load &", "parse"),
      "Each file is opened and its plain text is pulled out, for example one piece of text per PDF page."),
     ("chunk", 3, "index", 2, ("Split into", "chunks"),
-     "The text is cut into short, slightly overlapping pieces called chunks, so later only the relevant parts are used."),
+     "The text is cut into short, slightly overlapping pieces called chunks, so later only the relevant parts are "
+     "used."),
     ("embed_docs", 4, "index", 3, ("Embed", "chunks"),
-     "Each chunk becomes a list of 384 numbers (an embedding) that represents its meaning. Runs on your computer, free."),
+     "Each chunk becomes a list of 384 numbers (an embedding) that represents its meaning. Runs on your computer, "
+     "free."),
     ("index", 5, "index", 4, ("Store in", "FAISS index"),
      "All embeddings are saved in a FAISS index, a structure that quickly finds the vectors closest to a new one."),
     ("question", 6, "query", 3, ("Ask a", "question"),
@@ -188,7 +190,8 @@ def build_flow_svg(status: dict) -> str:
         y = ROW_TOP[stage] - 38
         parts.append(f'<rect x="{x}" y="{y}" width="{width}" height="{BOX_H + 50}" rx="12" fill="{color}" '
                      f'fill-opacity="0.07" stroke="{color}" stroke-opacity="0.45"/>')
-        parts.append(f'<text x="{x + 14}" y="{y + 21}" font-size="14.5" font-weight="700" fill="{color}">{label}</text>')
+        parts.append(f'<text x="{x + 14}" y="{y + 21}" font-size="14.5" '
+                     f'font-weight="700" fill="{color}">{label}</text>')
 
     # Every arrow points left to right. Rows are offset so step 8 sits to the right of
     # step 5, which lets the one cross-row connector also run left to right without crossing.
@@ -196,7 +199,7 @@ def build_flow_svg(status: dict) -> str:
     for stage in ("index", "query"):
         row = [s for s in FLOW_STEPS if s[2] == stage]
         y = ROW_TOP[stage] + BOX_H / 2
-        for a, b in zip(row, row[1:]):
+        for a, b in zip(row, row[1:], strict=False):
             arrows.append(_arrow(_box_x(a[3]) + BOX_W + 2, y, _box_x(b[3]) - 2, y))
     x1 = _box_x(by_id["index"][3]) + BOX_W * 0.7
     y1 = ROW_TOP["index"] + BOX_H + 2
@@ -207,9 +210,11 @@ def build_flow_svg(status: dict) -> str:
     parts.append(f'<text x="{(x1 + x2) / 2 + 16:.0f}" y="{(y1 + y2) / 2 - 1:.0f}" font-size="12.5" '
                  f'font-style="italic" fill="currentColor" opacity="0.8">retrieval searches this index</text>')
 
-    parts.append(f'<rect x="10" y="270" width="{FLOW_W - 20}" height="76" rx="10" fill="currentColor" fill-opacity="0.05"/>')
+    parts.append(f'<rect x="10" y="270" width="{FLOW_W - 20}" height="76" rx="10" '
+                 'fill="currentColor" fill-opacity="0.05"/>')
     parts.append(f'<text class="hint" x="{LEFT + 6}" y="298" font-size="14" fill="currentColor" opacity="0.72">'
-                 'Hover over (or tap) any step to see what it does. The step numbers match the numbered sections below.</text>')
+                 'Hover over (or tap) any step to see what it does. The step numbers match the numbered sections '
+                 'below.</text>')
 
     for step_id, num, stage, col, (line1, line2), desc in FLOW_STEPS:
         state = status.get(step_id, "pending")
@@ -229,7 +234,8 @@ def build_flow_svg(status: dict) -> str:
             f'<g class="node{" active" if state == "active" else ""}"><title>{html.escape(desc)}</title>'
             f'<rect class="box" x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="9" fill="{color}" '
             f'fill-opacity="{fill_opacity}" stroke="{stroke}" stroke-width="{stroke_w}"/>'
-            f'<text x="{x + 9}" y="{y + 15}" font-size="11" font-weight="700" fill="{text_fill}" opacity="0.85">{badge}</text>'
+            f'<text x="{x + 9}" y="{y + 15}" font-size="11" font-weight="700" '
+            f'fill="{text_fill}" opacity="0.85">{badge}</text>'
             f'<text x="{x + BOX_W / 2}" y="{y + 34}" font-size="13.5" font-weight="600" text-anchor="middle" '
             f'fill="{text_fill}">{html.escape(line1)}</text>'
             f'<text x="{x + BOX_W / 2}" y="{y + 50}" font-size="13.5" font-weight="600" text-anchor="middle" '
@@ -348,7 +354,8 @@ def hits_html(kept, dropped, min_similarity: float) -> str:
     if not kept:
         cards.append(f'<div class="rag-empty">No chunk reached the minimum similarity of {min_similarity:.2f}.</div>')
     if dropped:
-        cards.append(f'<div class="rag-sub">Retrieved but not sent: below the minimum similarity of {min_similarity:.2f}</div>')
+        cards.append('<div class="rag-sub">Retrieved but not sent: below the minimum similarity '
+                     f'of {min_similarity:.2f}</div>')
         cards.extend(_hit_card(r, MUTED_COLOR, "×", dropped=True) for r in dropped)
     return f'<div class="rag-hits">{"".join(cards)}</div>'
 
@@ -453,7 +460,8 @@ def prompt_html(prompt: str, blocks: list, question: str) -> str:
             continue
         color = RANK_COLORS[k % len(RANK_COLORS)]
         parts.append(f'<span class="instr">{html.escape(prompt[cursor:pos])}</span>')
-        parts.append(f'<span class="ctx" style="border-left-color:{color};background:{color}1F">{html.escape(block)}</span>')
+        parts.append(f'<span class="ctx" style="border-left-color:{color};background:{color}1F">'
+                     f'{html.escape(block)}</span>')
         cursor = pos + len(block)
     rest = prompt[cursor:]
     q_pos = rest.rfind(question)
@@ -565,7 +573,7 @@ def retrieval_map_figure(ix, lq, three_d: bool = False):
                           "<br><br>%{customdata[2]}<extra></extra>",
         ))
     colors = [RANK_COLORS[k % len(RANK_COLORS)] for k in range(len(results))]
-    for r, color in zip(results, colors):
+    for r, color in zip(results, colors, strict=True):
         fig.add_trace(_points(
             np.array([question_point, coords[r["index"]]]), three_d, mode="lines",
             line={"color": color, "width": 1.5 if not three_d else 4, "dash": "dot"},

@@ -1,6 +1,7 @@
 import logging
-from functools import lru_cache
-from typing import Any, Callable, List, Optional
+from collections.abc import Callable
+from functools import cache
+from typing import Any
 
 import numpy as np
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,7 +12,7 @@ from src import config
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_embedding_model(model_name: str) -> SentenceTransformer:
     """Load an embedding model once per process. Every pipeline, vector store, and app
     session shares the same instance instead of reloading it from disk."""
@@ -34,7 +35,7 @@ class EmbeddingPipeline:
     def model(self) -> SentenceTransformer:
         return get_embedding_model(self.model_name)
 
-    def chunk_documents(self, documents: List[Any]) -> List[Any]:
+    def chunk_documents(self, documents: list[Any]) -> list[Any]:
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
@@ -47,9 +48,9 @@ class EmbeddingPipeline:
 
     def embed_chunks(
         self,
-        chunks: List[Any],
+        chunks: list[Any],
         batch_size: int = 32,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> np.ndarray:
         """Embed chunk texts. If progress_callback is given, it's called as
         progress_callback(done, total) after each batch, so a UI can show live progress."""

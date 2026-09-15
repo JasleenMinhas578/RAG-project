@@ -54,7 +54,8 @@ def test_estimated_gemini_requests():
     assert modes.estimated_gemini_requests(modes.MODE_CLASSIC, quality_scores=True, with_without=True) == 3
     assert modes.estimated_gemini_requests(modes.MODE_AGENTIC, quality_scores=True) == 3
     assert modes.estimated_gemini_requests(modes.MODE_EVALUATION) == 2
-    assert modes.estimated_gemini_requests(modes.MODE_COMPARE, compared=[modes.MODE_CLASSIC, modes.MODE_VECTORLESS]) == 5
+    assert modes.estimated_gemini_requests(modes.MODE_COMPARE,
+                                          compared=[modes.MODE_CLASSIC, modes.MODE_VECTORLESS]) == 5
 
 
 # ---- agentic -----------------------------------------------------------------
@@ -211,7 +212,8 @@ def test_run_keyword_answers_from_keyword_hits_and_keeps_vector_results(monkeypa
 # ---- evaluation --------------------------------------------------------------
 
 def test_judge_answer_reads_scores_and_marks_unreadable_ones():
-    reply = json.dumps({"correct": {"score": 5, "reason": "Matches."}, "relevant": {"score": "4", "reason": "On topic."},
+    reply = json.dumps({"correct": {"score": 5, "reason": "Matches."},
+                        "relevant": {"score": "4", "reason": "On topic."},
                         "grounded": {"score": 9, "reason": "?"}})
     prompts = []
     judgement = modes.judge_answer(lambda p: prompts.append(p) or reply, "q?", "the answer", ["[Chunk #1]\nctx"])
