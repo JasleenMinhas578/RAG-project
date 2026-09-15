@@ -77,7 +77,7 @@ redraw_flow(flow_placeholder)
 st.html(FLOW_LEGEND)
 st.caption("This diagram shows Classic RAG. The other modes in the query stage explain their own steps.")
 
-ix = st.session_state.index_data
+index_data = st.session_state.index_data
 
 stage_banner("index", "Indexing stage", "Runs once per upload. It turns your files into a searchable index. Steps 1 to 5.")
 
@@ -98,20 +98,20 @@ with st.container(border=True):
             st.error(f"The files add up to {total_mb:.1f} MB. Please stay under {config.MAX_TOTAL_MB} MB.")
         elif st.button(f"Run indexing on {len(uploaded_files)} file(s) · {total_mb:.2f} MB", type="primary", icon="▶️"):
             runners.run_indexing(uploaded_files, chunk_size, chunk_overlap, flow_placeholder)
-    if ix:
-        st.caption("Currently indexed: " + ", ".join(ix["files"]))
+    if index_data:
+        st.caption("Currently indexed: " + ", ".join(index_data["files"]))
 
-if not ix:
+if not index_data:
     st.info("Upload at least one file and click **Run indexing** to see steps 2 to 5.")
 else:
     for render in (indexing.render_load, indexing.render_chunk, indexing.render_embed, indexing.render_index):
         with st.container(border=True):
-            render(ix)
+            render(index_data)
 
 stage_banner("query", "Query stage", "Runs once per question. Pick a RAG mode, ask a question, and follow that "
              "mode's numbered steps.")
 
-if not ix:
+if not index_data:
     st.info("The query stage searches the index built above, so run indexing first.")
     render_modes_overview()
 else:
@@ -151,30 +151,30 @@ else:
         if not api_key:
             st.caption("Asking is disabled until a GOOGLE_API_KEY is set in .env.")
         if asked:
-            q = question.strip()
-            if not q:
+            asked_question = question.strip()
+            if not asked_question:
                 st.warning("Type a question first.")
             elif mode == modes.MODE_COMPARE and len(selected) < 2:
                 st.warning("Pick at least two modes to compare.")
             elif mode in (modes.MODE_CLASSIC, modes.MODE_EVALUATION):
-                runners.run_query(q, top_k, min_similarity, with_without, judge, mode, api_key, flow_placeholder)
+                runners.run_query(asked_question, top_k, min_similarity, with_without, judge, mode, api_key, flow_placeholder)
             elif mode == modes.MODE_COMPARE:
-                runners.run_compare(q, selected, settings, api_key, flow_placeholder)
+                runners.run_compare(asked_question, selected, settings, api_key, flow_placeholder)
             else:
-                runners.run_mode(mode, q, settings, judge, api_key, flow_placeholder)
+                runners.run_mode(mode, asked_question, settings, judge, api_key, flow_placeholder)
 
     result = st.session_state.results_by_mode.get(mode)
     if result:
         if mode == modes.MODE_CLASSIC:
-            cards = [query.render_embed_question, lambda r: query.render_retrieve(ix, r), query.render_prompt,
+            cards = [query.render_embed_question, lambda r: query.render_retrieve(index_data, r), query.render_prompt,
                      lambda r: query.render_generate(r, show_scores=True)]
         elif mode == modes.MODE_EVALUATION:
-            cards = [query.render_embed_question, lambda r: query.render_retrieve(ix, r), query.render_prompt,
+            cards = [query.render_embed_question, lambda r: query.render_retrieve(index_data, r), query.render_prompt,
                      lambda r: query.render_generate(r, show_scores=False), query.render_judge]
         elif mode == modes.MODE_AGENTIC:
             cards = [mode_cards.render_agentic_decision, mode_cards.render_agentic_retrieval, mode_cards.render_agentic_answer]
         elif mode == modes.MODE_VECTORLESS:
-            cards = [lambda r: mode_cards.render_outline(ix, r), lambda r: mode_cards.render_section_pick(ix, r),
+            cards = [lambda r: mode_cards.render_outline(index_data, r), lambda r: mode_cards.render_section_pick(index_data, r),
                      mode_cards.render_vectorless_prompt, mode_cards.render_vectorless_answer]
         elif mode == modes.MODE_KEYWORD:
             cards = [mode_cards.render_two_searches, mode_cards.render_search_differences, mode_cards.render_keyword_answer]

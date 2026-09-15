@@ -58,25 +58,25 @@ def map_config(three_d: bool) -> dict:
     return {"displayModeBar": three_d, "displaylogo": False}
 
 
-def render_variance(ix):
-    variance = ix["variance"]
+def render_variance(index_data):
+    variance = index_data["variance"]
     kept_2d = f"**2D map: {variance[1] * 100:.1f}%**"
-    if ix["coords3d"] is None:
+    if index_data["coords3d"] is None:
         st.caption(f"Variance explained (the share of the differences between chunks that the squeezed numbers "
                    f"still capture): {kept_2d}. The map is still an approximation of the real "
-                   f"{ix['embeddings'].shape[1]}-number space.")
+                   f"{index_data['embeddings'].shape[1]}-number space.")
         return
     st.caption(f"Variance explained (the share of the differences between chunks that the squeezed numbers "
                f"still capture): {kept_2d} · **3D map: {variance[2] * 100:.1f}%**. 3D keeps more of the original "
                f"meaning than 2D, but both are still an approximation of the real "
-               f"{ix['embeddings'].shape[1]}-number space.")
+               f"{index_data['embeddings'].shape[1]}-number space.")
 
 
-def render_quality_scores(out: dict):
-    if out.get("judgement_error"):
-        st.warning(f"Quality scores unavailable: {out['judgement_error']}")
+def render_quality_scores(result: dict):
+    if result.get("judgement_error"):
+        st.warning(f"Quality scores unavailable: {result['judgement_error']}")
         return
-    judgement = out.get("judgement")
+    judgement = result.get("judgement")
     if not judgement:
         return
     label("Quality scores, graded by Gemini")
@@ -87,23 +87,23 @@ def render_quality_scores(out: dict):
                "grading an AI answer tends to be generous, so treat the scores as a rough signal.")
 
 
-def render_answer(out: dict):
-    if out.get("error"):
-        st.error(out["error"])
+def render_answer(result: dict):
+    if result.get("error"):
+        st.error(result["error"])
         return
     with st.container(border=True):
-        st.markdown(out["answer"])
-    if out.get("grounding"):
-        st.caption(f"Grounding score: {out['grounding']['score'] * 100:.0f}% (average similarity of the chunks "
+        st.markdown(result["answer"])
+    if result.get("grounding"):
+        st.caption(f"Grounding score: {result['grounding']['score'] * 100:.0f}% (average similarity of the chunks "
                    "behind the answer).")
-    render_quality_scores(out)
+    render_quality_scores(result)
 
 
-def render_prompt_expander(out: dict, title: str = "See the exact prompt sent to Gemini"):
-    if not out.get("prompt"):
+def render_prompt_expander(result: dict, title: str = "See the exact prompt sent to Gemini"):
+    if not result.get("prompt"):
         return
     with st.expander(title):
-        if out.get("blocks"):
-            st.html(prompt_html(out["prompt"], out["blocks"], out["question"]))
+        if result.get("blocks"):
+            st.html(prompt_html(result["prompt"], result["blocks"], result["question"]))
         else:
-            st.code(out["prompt"], language="text")
+            st.code(result["prompt"], language="text")

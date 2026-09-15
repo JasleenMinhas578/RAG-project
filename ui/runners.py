@@ -32,9 +32,9 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
     tmp_dir = tempfile.mkdtemp(prefix="rag_upload_")
     try:
         with st.status("Running the indexing stage…", expanded=True) as status:
-            for f in uploaded_files:
-                with open(os.path.join(tmp_dir, os.path.basename(f.name)), "wb") as out:
-                    out.write(f.getbuffer())
+            for upload in uploaded_files:
+                with open(os.path.join(tmp_dir, os.path.basename(upload.name)), "wb") as dest:
+                    dest.write(upload.getbuffer())
             mark(flow_placeholder, "upload", "done")
 
             st.write("Step 2 · Loading and parsing your files…")
@@ -125,111 +125,112 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
     st.rerun()
 
 
-def store_result(mode: str, out: dict):
-    st.session_state.results_by_mode[mode] = out
-    if out.get("answer"):
-        st.session_state.history.append({"mode": mode, "question": out["question"], "answer": out["answer"]})
+def store_result(mode: str, result: dict):
+    st.session_state.results_by_mode[mode] = result
+    if result.get("answer"):
+        st.session_state.history.append({"mode": mode, "question": result["question"], "answer": result["answer"]})
 
 
 def run_query(question: str, top_k: int, min_similarity: float, compare: bool, judge: bool, mode: str,
               api_key: str, flow_placeholder):
     """Classic RAG (also the first part of RAG evaluation), run step by step to light up the big flowchart."""
-    ix = st.session_state.index_data
-    store = ix["store"]
+    index_data = st.session_state.index_data
+    store = index_data["store"]
     rag = RAGSearch(vectorstore=store, google_api_key=api_key)
     for step_id in QUERY_STEP_IDS:
         st.session_state.flow_status.pop(step_id, None)
-    lq = {"question": question, "answer": None, "error": None, "min_similarity": min_similarity,
-          "compare": compare, "plain_answer": None, "plain_error": None}
+    query_result = {"question": question, "answer": None, "error": None, "min_similarity": min_similarity,
+                    "compare": compare, "plain_answer": None, "plain_error": None}
 
     with st.status(f"Running {mode}…", expanded=True) as status:
         mark(flow_placeholder, "question", "done")
 
         st.write("Step 7 · Turning your question into numbers…")
         mark(flow_placeholder, "embed_q", "active")
-        lq["q_vec"] = store.model.encode([question])[0]
-        projected_q = ix["pca"].transform([lq["q_vec"]])[0] if ix["pca"] is not None else None
-        lq["q_point"] = projected_q[:2] if projected_q is not None else None
-        lq["q_point3d"] = projected_q if ix["coords3d"] is not None else None
+        query_result["q_vec"] = store.model.encode([question])[0]
+        projected_q = index_data["pca"].transform([query_result["q_vec"]])[0] if index_data["pca"] is not None else None
+        query_result["q_point"] = projected_q[:2] if projected_q is not None else None
+        query_result["q_point3d"] = projected_q if index_data["coords3d"] is not None else None
         mark(flow_placeholder, "embed_q", "done")
 
         st.write("Step 8 · Finding the closest chunks…")
         mark(flow_placeholder, "retrieve", "active")
-        lq["results"], lq["dropped"] = filter_by_similarity(rag.retrieve(question, top_k=top_k), min_similarity)
+        query_result["results"], query_result["dropped"] = filter_by_similarity(rag.retrieve(question, top_k=top_k), min_similarity)
         mark(flow_placeholder, "retrieve", "done")
 
         st.write("Step 9 · Building the prompt…")
         mark(flow_placeholder, "prompt", "active")
-        lq["blocks"] = rag.context_blocks(lq["results"])
-        lq["prompt"] = rag.build_prompt(question, lq["results"])
-        mark(flow_placeholder, "prompt", "done" if lq["prompt"] else "pending")
+        query_result["blocks"] = rag.context_blocks(query_result["results"])
+        query_result["prompt"] = rag.build_prompt(question, query_result["results"])
+        mark(flow_placeholder, "prompt", "done" if query_result["prompt"] else "pending")
 
-        if lq["prompt"] is None:
-            if lq["dropped"]:
-                best = max(r["similarity"] for r in lq["dropped"])
-                lq["error"] = (f"None of the {len(lq['dropped'])} retrieved chunks reached the minimum similarity of "
-                               f"{min_similarity:.2f} (the best scored {best:.2f}), so nothing was sent to Gemini. "
-                               "Try rephrasing your question, or lower the minimum similarity in the sidebar.")
+        if query_result["prompt"] is None:
+            if query_result["dropped"]:
+                best = max(r["similarity"] for r in query_result["dropped"])
+                query_result["error"] = (
+                    f"None of the {len(query_result['dropped'])} retrieved chunks reached the minimum "
+                    f"similarity of {min_similarity:.2f} (the best scored {best:.2f}), so nothing was sent to Gemini. "
+                    "Try rephrasing your question, or lower the minimum similarity in the sidebar.")
             else:
-                lq["error"] = "No chunks were retrieved, so there was nothing to send to Gemini."
+                query_result["error"] = "No chunks were retrieved, so there was nothing to send to Gemini."
             status.update(label="No relevant chunks found", state="error")
         else:
             st.write("Step 10 · Asking Gemini…")
             mark(flow_placeholder, "generate", "active")
             try:
-                lq["answer"] = rag.generate_answer(lq["prompt"])
-                lq["grounding"] = grounding_score(lq["answer"], lq["results"])
+                query_result["answer"] = rag.generate_answer(query_result["prompt"])
+                query_result["grounding"] = grounding_score(query_result["answer"], query_result["results"])
                 mark(flow_placeholder, "generate", "done")
             except Exception as e:  # shown to the user in step 10 instead of crashing the page
-                lq["error"] = friendly_error(e)
+                query_result["error"] = friendly_error(e)
                 mark(flow_placeholder, "generate", "pending")
-            if lq["answer"] and compare:
+            if query_result["answer"] and compare:
                 st.write("Asking Gemini again, without your documents, for comparison…")
                 try:
-                    lq["plain_answer"] = rag.answer_without_context(question)
+                    query_result["plain_answer"] = rag.answer_without_context(question)
                 except Exception as e:  # the RAG answer still stands; show why the comparison is missing
-                    lq["plain_error"] = friendly_error(e)
+                    query_result["plain_error"] = friendly_error(e)
             if judge:
-                modes.add_quality_scores(rag, question, lq, progress=st.write)
-            status.update(label="Answer ready" if lq["answer"] else "Gemini call failed",
-                          state="complete" if lq["answer"] else "error")
+                modes.add_quality_scores(rag, question, query_result, progress=st.write)
+            status.update(label="Answer ready" if query_result["answer"] else "Gemini call failed",
+                          state="complete" if query_result["answer"] else "error")
 
-    store_result(mode, lq)
+    store_result(mode, query_result)
     st.rerun()
 
 
-def run_engine(mode: str, rag, ix, question: str, settings: dict, progress):
+def run_engine(mode: str, rag, index_data, question: str, settings: dict, progress):
     if mode == modes.MODE_CLASSIC:
         return modes.run_classic(rag, question, settings["top_k"], settings["min_similarity"], progress)
     if mode == modes.MODE_AGENTIC:
-        return modes.run_agentic(rag, question, ix["files"], settings["top_k"], settings["min_similarity"], progress)
+        return modes.run_agentic(rag, question, index_data["files"], settings["top_k"], settings["min_similarity"], progress)
     if mode == modes.MODE_VECTORLESS:
-        return modes.run_vectorless(rag, question, ix["outline"], progress)
-    return modes.run_keyword(rag, question, ix["keyword_index"], ix["texts"], ix["sources"], settings["top_k"],
+        return modes.run_vectorless(rag, question, index_data["outline"], progress)
+    return modes.run_keyword(rag, question, index_data["keyword_index"], index_data["texts"], index_data["sources"], settings["top_k"],
                              settings["min_similarity"], progress)
 
 
 def run_mode(mode: str, question: str, settings: dict, judge: bool, api_key: str, flow_placeholder):
     """Agentic, vectorless and keyword modes. They don't light up the big (classic) flowchart."""
-    ix = st.session_state.index_data
-    rag = RAGSearch(vectorstore=ix["store"], google_api_key=api_key)
+    index_data = st.session_state.index_data
+    rag = RAGSearch(vectorstore=index_data["store"], google_api_key=api_key)
     for step_id in QUERY_STEP_IDS:
         st.session_state.flow_status.pop(step_id, None)
     redraw_flow(flow_placeholder)
     with st.status(f"Running {mode}…", expanded=True) as status:
-        out = run_engine(mode, rag, ix, question, settings, progress=st.write)
+        result = run_engine(mode, rag, index_data, question, settings, progress=st.write)
         if judge:
-            modes.add_quality_scores(rag, question, out, progress=st.write)
-        status.update(label="Answer ready" if out.get("answer") else "Finished with a problem",
-                      state="complete" if out.get("answer") else "error")
-    out["question"] = question
-    store_result(mode, out)
+            modes.add_quality_scores(rag, question, result, progress=st.write)
+        status.update(label="Answer ready" if result.get("answer") else "Finished with a problem",
+                      state="complete" if result.get("answer") else "error")
+    result["question"] = question
+    store_result(mode, result)
     st.rerun()
 
 
 def run_compare(question: str, selected: list, settings: dict, api_key: str, flow_placeholder):
-    ix = st.session_state.index_data
-    rag = RAGSearch(vectorstore=ix["store"], google_api_key=api_key)
+    index_data = st.session_state.index_data
+    rag = RAGSearch(vectorstore=index_data["store"], google_api_key=api_key)
     for step_id in QUERY_STEP_IDS:
         st.session_state.flow_status.pop(step_id, None)
     redraw_flow(flow_placeholder)
@@ -237,10 +238,10 @@ def run_compare(question: str, selected: list, settings: dict, api_key: str, flo
     with st.status("Running the question through each mode…", expanded=True) as status:
         for mode in selected:
             st.write(f"**{mode}**")
-            out = run_engine(mode, rag, ix, question, settings, progress=st.write)
-            modes.add_quality_scores(rag, question, out, progress=st.write)
-            out["question"] = question
-            runs[mode] = out
+            result = run_engine(mode, rag, index_data, question, settings, progress=st.write)
+            modes.add_quality_scores(rag, question, result, progress=st.write)
+            result["question"] = question
+            runs[mode] = result
         failed = [m for m, r in runs.items() if not r.get("answer")]
         status.update(label="All modes answered" if not failed else f"Finished; {len(failed)} mode(s) had a problem",
                       state="complete" if not failed else "error")

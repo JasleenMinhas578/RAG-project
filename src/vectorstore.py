@@ -116,11 +116,11 @@ class FaissVectorStore:
         logger.info("Loaded FAISS index and metadata from %s", self.persist_dir)
 
     def search(self, query_embedding: np.ndarray, top_k: int = 5):
-        D, I = self.index.search(query_embedding, top_k)
+        distances, indices = self.index.search(query_embedding, top_k)
         results = []
         query_vec = query_embedding[0]
         query_norm = np.linalg.norm(query_vec)
-        for idx, dist in zip(I[0], D[0]):
+        for idx, dist in zip(indices[0], distances[0]):
             if idx == -1:
                 continue
             meta = self.metadata[idx] if idx < len(self.metadata) else None
