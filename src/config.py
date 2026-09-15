@@ -20,6 +20,18 @@ DEFAULT_CHUNK_OVERLAP = 100
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 VECTOR_PREVIEW_DIMS = 12  # how many numbers of a vector the app prints as a sample
 
+# How much text the app shows rather than how much it processes.
+# PREVIEW_CHARS is read twice -- once to cut the preview, once to decide whether to end it with an
+# ellipsis -- so the two must agree; they were separate literals before.
+PREVIEW_CHARS = 600
+OVERLAP_CONTEXT_CHARS = 220  # text shown either side of the highlighted overlap between two chunks
+NEIGHBORS_K = 5              # nearest neighbors listed for an inspected chunk
+
+# Chunk map. One PCA with up to 3 components serves both maps, so the 2D map is its first two
+# columns; a fixed seed keeps the map from jumping between runs of the same documents.
+PCA_COMPONENTS = 3
+PCA_RANDOM_STATE = 42
+
 # Retrieval / generation
 DEFAULT_TOP_K = 4
 # Retrieved chunks scoring below this cosine similarity are not sent to Gemini. With

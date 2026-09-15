@@ -116,6 +116,13 @@ class FaissVectorStore:
         logger.info("Loaded FAISS index and metadata from %s", self.persist_dir)
 
     def search(self, query_embedding: np.ndarray, top_k: int = 5):
+        """The top_k nearest stored vectors, each with its distance, cosine similarity and metadata.
+
+        FAISS ranks by L2 distance, which is what `distances` holds. The similarity reported
+        alongside it is true cosine similarity, computed against the vector reconstructed from the
+        index -- for these unit-length embeddings both orderings agree, but a 0-to-1 similarity is
+        what the app shows and what the minimum-similarity filter compares against.
+        """
         distances, indices = self.index.search(query_embedding, top_k)
         results = []
         query_vec = query_embedding[0]
@@ -125,6 +132,7 @@ class FaissVectorStore:
                 continue
             meta = self.metadata[idx] if idx < len(self.metadata) else None
             stored_vec = self.index.reconstruct(int(idx))
+            # + 1e-12 so an all-zero vector gives similarity 0 instead of dividing by zero.
             similarity = float(np.dot(query_vec, stored_vec) / (query_norm * np.linalg.norm(stored_vec) + 1e-12))
             results.append({"index": int(idx), "distance": float(dist), "similarity": similarity, "metadata": meta})
         return results

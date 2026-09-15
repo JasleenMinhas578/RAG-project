@@ -36,6 +36,7 @@ def render_agentic_decision(result):
                 "your documents, or can it be answered directly? The path this question took is highlighted.")
     term("Router", "a step that chooses which path a question takes. Here the router is a single Gemini call.", "query")
     route = result.get("route")
+    # st.markdown, not st.html: st.html's sanitizer strips <svg> entirely (same as the big flowchart).
     st.markdown(agentic_flow_svg(None if route is None else route["needs_retrieval"]), unsafe_allow_html=True)
     if route is None:
         st.error(result["error"])

@@ -71,7 +71,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             store.add_embeddings(embeddings, [{"text": t, "source": s} for t, s in zip(texts, sources)])
             # One PCA with up to 3 components serves both maps: PCA components come in order of
             # importance, so the 2D map is simply the first two of the three.
-            pca = PCA(n_components=min(3, len(chunks)), random_state=42).fit(embeddings) if len(chunks) >= 2 else None
+            pca = PCA(n_components=min(config.PCA_COMPONENTS, len(chunks)), random_state=config.PCA_RANDOM_STATE).fit(embeddings) if len(chunks) >= 2 else None
             projected = pca.transform(embeddings) if pca is not None else None
             mark(flow_placeholder, "index", "done")
             status.update(label="Indexing complete", state="complete")
@@ -83,7 +83,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             info["pieces"] += 1
             info["chars"] += len(d.page_content)
             if not info["preview"] and d.page_content.strip():
-                info["preview"] = d.page_content.strip()[:600]
+                info["preview"] = d.page_content.strip()[:config.PREVIEW_CHARS]
             file_texts.setdefault(name, []).append(d.page_content)
 
         overlap_example = None
@@ -108,7 +108,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             "store": store,
             "pca": pca,
             "coords": projected[:, :2] if projected is not None else None,
-            "coords3d": projected if projected is not None and projected.shape[1] == 3 else None,
+            "coords3d": projected if projected is not None and projected.shape[1] == config.PCA_COMPONENTS else None,
             # cumulative share of variance kept: [1 component, 2 components, 3 components]
             "variance": np.cumsum(pca.explained_variance_ratio_).tolist() if pca is not None else None,
             "chunk_size": chunk_size,

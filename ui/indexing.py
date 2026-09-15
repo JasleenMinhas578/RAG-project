@@ -49,7 +49,7 @@ def render_load(index_data):
     with st.expander("See the text extracted from each file"):
         for name, v in index_data["per_file"].items():
             label(html.escape(name))
-            text_box(v["preview"] + ("…" if len(v["preview"]) >= 600 else "") if v["preview"] else "(no text found)")
+            text_box(v["preview"] + ("…" if len(v["preview"]) >= config.PREVIEW_CHARS else "") if v["preview"] else "(no text found)")
 
 
 def render_chunk(index_data):
@@ -74,20 +74,28 @@ def render_chunk(index_data):
         st.dataframe(pd.DataFrame({"file": counts.index, "chunks": counts.values}), width="stretch", hide_index=True)
 
     if index_data["overlap_example"]:
-        i, n = index_data["overlap_example"]
-        a, b = texts[i], texts[i + 1]
-        start = max(0, len(a) - n - 220)
-        tail = ("…" if start else "") + html.escape(a[start:len(a) - n]) + f'<mark class="rag-overlap">{html.escape(a[len(a) - n:])}</mark>'
-        head = f'<mark class="rag-overlap">{html.escape(b[:n])}</mark>' + html.escape(b[n:n + 220]) + ("…" if len(b) > n + 220 else "")
-        label(f"Overlap in action: chunk {i + 1} and chunk {i + 2} from {html.escape(sources[i])}")
+        # Show one real pair of neighboring chunks with their shared text highlighted in both.
+        first, shared = index_data["overlap_example"]
+        earlier_text, later_text = texts[first], texts[first + 1]
+        context = config.OVERLAP_CONTEXT_CHARS
+        start = max(0, len(earlier_text) - shared - context)
+        # Both halves are built as markup, so each piece is escaped here and the result goes into
+        # st.html already escaped -- do not escape it again or the <mark> tags will show as text.
+        ending = (("…" if start else "")
+                  + html.escape(earlier_text[start:len(earlier_text) - shared])
+                  + f'<mark class="rag-overlap">{html.escape(earlier_text[len(earlier_text) - shared:])}</mark>')
+        beginning = (f'<mark class="rag-overlap">{html.escape(later_text[:shared])}</mark>'
+                     + html.escape(later_text[shared:shared + context])
+                     + ("…" if len(later_text) > shared + context else ""))
+        label(f"Overlap in action: chunk {first + 1} and chunk {first + 2} from {html.escape(sources[first])}")
         end_col, start_col = st.columns(2, gap="medium")
         with end_col:
-            st.caption(f"End of chunk {i + 1}")
-            st.html(f'<div class="rag-text">{tail}</div>')
+            st.caption(f"End of chunk {first + 1}")
+            st.html(f'<div class="rag-text">{ending}</div>')
         with start_col:
-            st.caption(f"Start of chunk {i + 2}")
-            st.html(f'<div class="rag-text">{head}</div>')
-        st.caption(f"The highlighted {n} characters appear in both chunks.")
+            st.caption(f"Start of chunk {first + 2}")
+            st.html(f'<div class="rag-text">{beginning}</div>')
+        st.caption(f"The highlighted {shared} characters appear in both chunks.")
     elif index_data["chunk_overlap"]:
         st.caption("In these documents no two neighboring chunks share any text. That happens when every cut "
                    "lands exactly on a paragraph break, so no sentence was split and nothing needed repeating.")
@@ -141,7 +149,7 @@ def render_embed(index_data):
     map_col, side_col = st.columns([2, 1], gap="large")
     with map_col:
         if view == "Nearest neighbors list":
-            st.html(neighbors_html(index_data["store"].neighbors(selected, k=5), selected + 1))
+            st.html(neighbors_html(index_data["store"].neighbors(selected, k=config.NEIGHBORS_K), selected + 1))
             st.caption(f"The list compares all {dims} numbers directly, so nothing is lost the way it is in a map.")
         else:
             three_d = view == "3D view"
@@ -158,7 +166,8 @@ def render_embed(index_data):
             "similar meaning. Hover over a dot to read its chunk; the ringed dot is the chunk you picked.",
             "<b>3D map:</b> drag to rotate, scroll to zoom, and right-drag to pan. The third direction separates "
             "dots that sit on top of each other in 2D.",
-            "<b>Nearest neighbors list:</b> no map at all. It ranks the 5 chunks most similar to the one you "
+            f"<b>Nearest neighbors list:</b> no map at all. It ranks the {config.NEIGHBORS_K} chunks most "
+            "similar to the one you "
             "picked. <b>Cosine similarity</b> is the score: near 1 means very similar meaning, near 0 means unrelated.",
         ])
 
