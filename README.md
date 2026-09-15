@@ -341,6 +341,12 @@ renders. They don't call the Gemini API and don't download the embedding model.
 | **You've reached today's free-tier limit for this Gemini model** | The free tier also caps requests per day, per model (20 a day for `gemini-flash-latest` when this was written). Try again tomorrow, or set `DEFAULT_GEMINI_MODEL` in `src/config.py` to another model, which has its own daily limit |
 | **None of the retrieved chunks reached the minimum similarity** | Rephrase the question, or lower **Minimum similarity** in the sidebar |
 | A file fails to load | It's skipped with a warning in the terminal, so the other files still load |
+| Deployed app shows **`ImportError: cannot import name ...`** right after a push | A stale worker on Streamlit Community Cloud, not a code bug. It pulls the new code and re-runs `streamlit_app.py`, but modules already in `sys.modules` (anything under `src/` or `ui/`) are not re-imported, so a newly added name appears missing. **Manage app → Reboot** fixes it. The traceback can be doubly confusing because it renders the old source next to the new error |
+
+**Deploying:** pushes to `main` redeploy the Streamlit Community Cloud app automatically, but only a
+change to `requirements.txt` forces a full environment rebuild. A push that just changes Python files
+re-runs the entry script in the existing process, so reboot the app from its **Manage app** menu after
+any change that adds a new name to a module — see the `ImportError` row above.
 
 **Why hot reload is off:** `.streamlit/config.toml` sets `fileWatcherType = "none"`. With the
 watcher on, Streamlit scans the `transformers` package and floods the terminal with harmless

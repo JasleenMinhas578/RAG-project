@@ -40,6 +40,13 @@ Web app (the primary way to use this project):
 ```bash
 streamlit run streamlit_app.py
 ```
+Deployed on Streamlit Community Cloud from `main`. A push redeploys, but only a change to
+`requirements.txt` rebuilds the environment — otherwise the existing process pulls the new code and
+re-runs `streamlit_app.py` while keeping already-imported `src.*` / `ui.*` modules in `sys.modules`.
+So a commit that adds a new top-level name to an existing module can fail with
+`ImportError: cannot import name ...` until the app is rebooted from its Manage app menu. The
+traceback is misleading in that state: it renders the old source next to the new error.
+
 `.streamlit/config.toml` turns Streamlit's file watcher off (`fileWatcherType = "none"`): with it on,
 the watcher scans `transformers` and floods the terminal with harmless `No module named 'torchvision'`
 tracebacks. Consequence: code edits don't hot-reload — restart the server to pick them up.
