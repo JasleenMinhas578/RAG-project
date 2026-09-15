@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 
-from src.data_loader import LOADERS, UPLOAD_TYPES, load_all_documents
+from src.data_loader import LOADERS, UPLOAD_TYPES, UPLOAD_TYPES_LABEL, load_all_documents
 
 
 def test_loads_text_and_json_recursively_and_skips_broken_files(tmp_path, caplog):
@@ -49,6 +49,12 @@ def test_unsupported_files_are_ignored_without_failing(tmp_path):
     docs = load_all_documents(str(tmp_path))
 
     assert [d.page_content for d in docs] == ["Keep me."]
+
+
+def test_upload_label_names_every_type_the_uploader_accepts():
+    # A hand-written label had already drifted: it accepted .markdown but didn't say so.
+    for extension in UPLOAD_TYPES:
+        assert extension.upper() in UPLOAD_TYPES_LABEL
 
 
 def test_upload_types_match_the_loader_table():

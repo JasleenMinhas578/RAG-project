@@ -146,7 +146,7 @@ def test_outline_is_capped():
     assert len(outline["sections"]) == 10 and outline["truncated"] is True
 
 
-def test_pick_sections_normalizes_ids_and_ignores_invalid_ones(monkeypatch):
+def test_pick_sections_normalizes_ids_and_ignores_invalid_ones():
     sections = modes.build_outline([("report.txt", REPORT)])["sections"]
     reply = json.dumps({"sections": ["s2", "2", "S9", "3", "S1"], "reason": "Venus and Mars."})
     pick = modes.pick_sections(lambda prompt: reply, "q", sections, max_pick=2)

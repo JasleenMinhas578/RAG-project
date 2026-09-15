@@ -16,10 +16,10 @@ import os
 import streamlit as st
 
 from src import config, modes
-from src.data_loader import UPLOAD_TYPES
+from src.data_loader import UPLOAD_TYPES, UPLOAD_TYPES_LABEL
 from src.visuals import CSS, FLOW_LEGEND, INDEX_COLOR, QUERY_COLOR
 from ui import indexing, mode_cards, query, runners
-from ui.components import redraw_flow, stage_banner, step_header
+from ui.components import clear_index_widgets, redraw_flow, stage_banner, step_header
 from ui.mode_copy import mode_intro, render_modes_overview
 
 st.set_page_config(page_title="RAG Pipeline Explorer", page_icon="🔍", layout="wide")
@@ -37,7 +37,8 @@ with st.sidebar:
     if api_key:
         st.success("Gemini API key loaded from .env", icon="🔑")
     else:
-        st.error("No GOOGLE_API_KEY found. Copy `.env.example` to `.env`, add your free key from "
+        st.error("No GOOGLE_API_KEY found. Create a `.env` file next to this app containing "
+                 "`GOOGLE_API_KEY=your-key`, using a free key from "
                  "https://aistudio.google.com/apikey, then restart the app.", icon="🔑")
     chunk_size = st.slider("Chunk size (characters)", 200, 2000, config.DEFAULT_CHUNK_SIZE, step=100,
                            help="The longest a chunk can be. Smaller chunks are more precise but carry less "
@@ -56,7 +57,7 @@ with st.sidebar:
     if st.button("Reset and start over", icon="🔄", width="stretch"):
         for key, value in DEFAULTS.items():
             st.session_state[key] = copy.deepcopy(value)
-        st.session_state.pop("inspect_chunk", None)
+        clear_index_widgets()
         st.rerun()
 
 settings = {"top_k": top_k, "min_similarity": min_similarity}
@@ -86,7 +87,7 @@ with st.container(border=True):
                 "Add the files you want to ask questions about. The app answers only from these files, "
                 "never from the internet.")
     uploaded_files = st.file_uploader(
-        "PDF, TXT, MD, CSV, DOCX, XLSX or JSON", type=UPLOAD_TYPES,
+        UPLOAD_TYPES_LABEL, type=UPLOAD_TYPES,
         accept_multiple_files=True,
         help=f"Up to {config.MAX_FILES} files and {config.MAX_TOTAL_MB} MB in total.",
     )
@@ -132,7 +133,9 @@ else:
                 selected = st.multiselect("Modes to compare", modes.COMPARABLE_MODES,
                                           default=[modes.MODE_CLASSIC, modes.MODE_VECTORLESS], key="compare_modes",
                                           help="Each mode runs the full question and is graded by the judge.")
-                st.caption("Uses 2 to 3 Gemini requests per selected mode, including its quality scores.")
+                fewest, most = modes.compare_calls_range()
+                st.caption(f"Uses {fewest} to {most} Gemini requests per selected mode, including its "
+                           "quality scores.")
             elif mode == modes.MODE_EVALUATION:
                 st.caption(f"Quality scores are always on in this mode. Uses "
                            f"{modes.estimated_gemini_requests(mode)} Gemini requests per question.")
@@ -174,7 +177,7 @@ else:
         elif mode == modes.MODE_AGENTIC:
             cards = [mode_cards.render_agentic_decision, mode_cards.render_agentic_retrieval, mode_cards.render_agentic_answer]
         elif mode == modes.MODE_VECTORLESS:
-            cards = [lambda r: mode_cards.render_outline(index_data, r), lambda r: mode_cards.render_section_pick(index_data, r),
+            cards = [lambda r: mode_cards.render_outline(index_data), lambda r: mode_cards.render_section_pick(index_data, r),
                      mode_cards.render_vectorless_prompt, mode_cards.render_vectorless_answer]
         elif mode == modes.MODE_KEYWORD:
             cards = [mode_cards.render_two_searches, mode_cards.render_search_differences, mode_cards.render_keyword_answer]

@@ -107,6 +107,15 @@ def parse_json_reply(text: str):
     return data if isinstance(data, dict) else None
 
 
+def compare_calls_range() -> tuple:
+    """(fewest, most) Gemini requests one compared mode costs, including its quality score.
+
+    Compare mode grades every mode it runs, so each costs its own call count plus one judge call.
+    Derived rather than written into the captions, which had drifted into two different wordings.
+    """
+    return min(GEMINI_CALLS.values()) + 1, max(GEMINI_CALLS.values()) + 1
+
+
 def estimated_gemini_requests(mode: str, quality_scores: bool = False, with_without: bool = False,
                               compared=()) -> int:
     if mode == MODE_COMPARE:

@@ -67,7 +67,9 @@ MODE_FACTS = {
 def mode_calls_label(mode: str) -> str:
     """How many Gemini requests one question costs in this mode, for the overview table."""
     if mode == modes.MODE_COMPARE:
-        return "1-2 per mode, +1 judge each"
+        # It depends on which modes are picked, so the table gives the per-mode range instead.
+        fewest, most = modes.compare_calls_range()
+        return f"{fewest - 1}-{most - 1} per mode, +1 judge each"
     return str(modes.estimated_gemini_requests(mode))
 
 
@@ -79,10 +81,10 @@ def modes_overview_table() -> str:
     ])
 
 
-def render_modes_overview(expanded: bool = False):
+def render_modes_overview():
     """The six modes side by side. Shown before indexing too, so the designs can be read about
     without uploading anything first."""
-    with st.expander("Compare all six modes", expanded=expanded):
+    with st.expander("Compare all six modes"):
         st.html(modes_overview_table())
         st.caption("Step numbers continue from the indexing stage, so every mode's first query step is 7. "
                    "Only Classic RAG and RAG evaluation light up the big flowchart above; the others "

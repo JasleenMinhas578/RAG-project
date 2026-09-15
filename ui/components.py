@@ -12,6 +12,16 @@ from src.visuals import STAGE_COLOR, build_flow_svg, prompt_html, scores_html
 # The query stage's flowchart steps, in order. Cleared together whenever a new question starts.
 QUERY_STEP_IDS = ("question", "embed_q", "retrieve", "prompt", "generate")
 
+# Widgets whose remembered choice refers to a specific index: which chunk was being inspected and
+# which map view was open. Indexing again, or resetting, makes those choices meaningless, so both
+# paths clear the same set -- they used to clear different ones.
+INDEX_WIDGET_KEYS = ("inspect_chunk", "embed_view", "retrieval_view")
+
+
+def clear_index_widgets():
+    for widget_key in INDEX_WIDGET_KEYS:
+        st.session_state.pop(widget_key, None)
+
 
 def redraw_flow(flow_placeholder):
     # st.markdown, not st.html: st.html's sanitizer strips <svg> entirely.
@@ -99,7 +109,15 @@ def render_answer(result: dict):
     render_quality_scores(result)
 
 
+def raw_prompt_expander(prompt: str):
+    """The exact characters sent to Gemini, for copying. Shown under the colored view, which is
+    easier to read but is HTML."""
+    with st.expander("Raw prompt text (copyable)"):
+        st.code(prompt, language="text")
+
+
 def render_prompt_expander(result: dict, title: str = "See the exact prompt sent to Gemini"):
+    """The whole prompt, collapsed -- for the modes that don't give it a step of its own."""
     if not result.get("prompt"):
         return
     with st.expander(title):

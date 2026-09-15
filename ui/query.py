@@ -18,6 +18,7 @@ from ui.components import (
     label,
     map_config,
     note,
+    raw_prompt_expander,
     render_quality_scores,
     render_variance,
     step_header,
@@ -82,8 +83,7 @@ def render_prompt(query_result):
     st.html(prompt_html(query_result["prompt"], query_result["blocks"], query_result["question"]))
     st.caption(f"{len(query_result['prompt']):,} characters sent. Faded text is the instruction, colored blocks are the "
                "context, and the green highlight is your question.")
-    with st.expander("Raw prompt text (copyable)"):
-        st.code(query_result["prompt"], language="text")
+    raw_prompt_expander(query_result["prompt"])
 
 
 def render_generate(query_result, show_scores: bool):

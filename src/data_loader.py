@@ -41,6 +41,10 @@ LOADERS = {
 # app's accepted list can't drift away from what this module can actually load.
 UPLOAD_TYPES = [ext.lstrip(".") for ext in LOADERS]
 
+# The same list as a label to show above the uploader. Derived rather than written out, because a
+# hand-written one had already drifted: it listed MD but not MARKDOWN.
+UPLOAD_TYPES_LABEL = ", ".join(t.upper() for t in UPLOAD_TYPES[:-1]) + f" or {UPLOAD_TYPES[-1].upper()}"
+
 
 def load_all_documents(data_dir: str) -> List[Any]:
     """Load every supported file under data_dir (recursively) into LangChain documents.

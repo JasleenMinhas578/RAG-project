@@ -21,6 +21,7 @@ from src.visuals import (
 from ui.components import (
     label,
     note,
+    raw_prompt_expander,
     render_answer,
     render_prompt_expander,
     render_quality_scores,
@@ -75,7 +76,7 @@ def render_agentic_answer(result):
 # Vectorless RAG sections
 # --------------------------------------------------------------------------
 
-def render_outline(index_data, result):
+def render_outline(index_data):
     outline = index_data["outline"]
     sections = outline["sections"]
     step_header(7, "Build the outline", "query",
@@ -131,8 +132,7 @@ def render_vectorless_prompt(result):
         st.caption("No prompt was built, because no section was picked.")
         return
     st.html(prompt_html(result["prompt"], result["blocks"], result["question"]))
-    with st.expander("Raw prompt text (copyable)"):
-        st.code(result["prompt"], language="text")
+    raw_prompt_expander(result["prompt"])
 
 
 def render_vectorless_answer(result):

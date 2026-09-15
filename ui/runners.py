@@ -21,14 +21,13 @@ from src.embedding import EmbeddingPipeline
 from src.search import RAGSearch, filter_by_similarity, friendly_error, grounding_score
 from src.vectorstore import FaissVectorStore
 from src.visuals import find_overlap
-from ui.components import QUERY_STEP_IDS, mark, redraw_flow
+from ui.components import QUERY_STEP_IDS, clear_index_widgets, mark, redraw_flow
 
 
 def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_placeholder):
     st.session_state.flow_status = {}
     st.session_state.results_by_mode = {}
-    for widget_key in ("inspect_chunk", "embed_view", "retrieval_view"):
-        st.session_state.pop(widget_key, None)
+    clear_index_widgets()
     tmp_dir = tempfile.mkdtemp(prefix="rag_upload_")
     try:
         with st.status("Running the indexing stage…", expanded=True) as status:
@@ -125,6 +124,22 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
     st.rerun()
 
 
+def start_query(api_key: str, flow_placeholder=None):
+    """Everything a new question needs before any work starts: the indexed data, a RAGSearch over
+    it, and a cleared query half of the flowchart.
+
+    Pass flow_placeholder to redraw the cleared flowchart immediately -- the modes that don't drive
+    it leave it blank instead, which is why it is optional.
+    """
+    index_data = st.session_state.index_data
+    rag = RAGSearch(vectorstore=index_data["store"], google_api_key=api_key)
+    for step_id in QUERY_STEP_IDS:
+        st.session_state.flow_status.pop(step_id, None)
+    if flow_placeholder is not None:
+        redraw_flow(flow_placeholder)
+    return index_data, rag
+
+
 def store_result(mode: str, result: dict):
     st.session_state.results_by_mode[mode] = result
     if result.get("answer"):
@@ -134,11 +149,8 @@ def store_result(mode: str, result: dict):
 def run_query(question: str, top_k: int, min_similarity: float, compare: bool, judge: bool, mode: str,
               api_key: str, flow_placeholder):
     """Classic RAG (also the first part of RAG evaluation), run step by step to light up the big flowchart."""
-    index_data = st.session_state.index_data
+    index_data, rag = start_query(api_key)
     store = index_data["store"]
-    rag = RAGSearch(vectorstore=store, google_api_key=api_key)
-    for step_id in QUERY_STEP_IDS:
-        st.session_state.flow_status.pop(step_id, None)
     query_result = {"question": question, "answer": None, "error": None, "min_similarity": min_similarity,
                     "compare": compare, "plain_answer": None, "plain_error": None}
 
@@ -212,11 +224,7 @@ def run_engine(mode: str, rag, index_data, question: str, settings: dict, progre
 
 def run_mode(mode: str, question: str, settings: dict, judge: bool, api_key: str, flow_placeholder):
     """Agentic, vectorless and keyword modes. They don't light up the big (classic) flowchart."""
-    index_data = st.session_state.index_data
-    rag = RAGSearch(vectorstore=index_data["store"], google_api_key=api_key)
-    for step_id in QUERY_STEP_IDS:
-        st.session_state.flow_status.pop(step_id, None)
-    redraw_flow(flow_placeholder)
+    index_data, rag = start_query(api_key, flow_placeholder)
     with st.status(f"Running {mode}…", expanded=True) as status:
         result = run_engine(mode, rag, index_data, question, settings, progress=st.write)
         if judge:
@@ -229,11 +237,7 @@ def run_mode(mode: str, question: str, settings: dict, judge: bool, api_key: str
 
 
 def run_compare(question: str, selected: list, settings: dict, api_key: str, flow_placeholder):
-    index_data = st.session_state.index_data
-    rag = RAGSearch(vectorstore=index_data["store"], google_api_key=api_key)
-    for step_id in QUERY_STEP_IDS:
-        st.session_state.flow_status.pop(step_id, None)
-    redraw_flow(flow_placeholder)
+    index_data, rag = start_query(api_key, flow_placeholder)
     runs = {}
     with st.status("Running the question through each mode…", expanded=True) as status:
         for mode in selected:
