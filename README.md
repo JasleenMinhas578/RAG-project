@@ -8,8 +8,8 @@ Most RAG demos hide the pipeline behind a single "Ask" button. This one shows ev
 result: the parsed text, the chunk boundaries, the embedding vectors, the FAISS index, which chunks
 were retrieved and why, and the exact prompt sent to the model.
 
-**Try it live:** https://rag-project-jasleen.streamlit.app/. No file needed: click **Index the 4
-sample documents** to explore with a small library about AI, then pick one of the suggested questions.
+**Try it live:** https://rag-project-jasleen.streamlit.app/. No file needed: click **Index the sample
+library** to explore with a small library about AI, then pick one of the suggested questions.
 
 Everything runs on **free tiers**:
 
@@ -87,11 +87,11 @@ flowchart LR
 | 9 | **Build the prompt** | The exact prompt sent to Gemini, with each retrieved chunk color-coded to match its rank |
 | 10 | **Generate answer** | Gemini's answer with `[#1]`-style citations and a **grounding score**; optionally side by side with the no-documents answer |
 
-A live flowchart at the top of the page lights up each step as it runs, and each box shows the data
-at that point, filled in with the real sizes from your run: `98 chunks`, `98 × 384`, `4 of 4 sent`,
-`1,919 chars`, `cites #1`. Every step also has an **Under the hood** strip that names the component
-doing the work (`RecursiveCharacterTextSplitter`, `all-MiniLM-L6-v2`, `faiss.IndexFlatL2`, Gemini) and
-its input → output for your documents. The same rank colors link the retrieval map, the ranked list,
+A live flowchart at the top of the page lights up each step as it runs. Once a step has run, its
+box shows the real size of your data there (`98 chunks`, `98 × 384`, `4 of 4 sent`); before that it
+shows nothing. Every step also has an **Under the hood** strip with the component doing the work
+(`RecursiveCharacterTextSplitter`, `all-MiniLM-L6-v2`, `faiss.IndexFlatL2`, the Gemini model) and its
+input → output for your documents. The same rank colors link the retrieval map, the ranked list,
 and the colored prompt, so you can follow any chunk from the map to the prompt and into the answer.
 
 **Minimum similarity:** retrieved chunks scoring below this threshold (default 0.25) are not sent to
@@ -108,7 +108,7 @@ Gemini with no retrieved context. The difference between the two answers is the 
 ## The sample AI library
 
 Don't have a document to hand? Step 1 offers four short documents about AI, in
-[`samples/`](samples/), indexed with one click. **Read the 4 sample documents**, just above the
+[`samples/`](samples/), indexed with one click. **Read the sample documents**, just above the
 button, shows each one in full (the glossary as a table) with a download button, so you can see
 what the answers will come from, or download a file and try uploading it yourself:
 
@@ -220,8 +220,8 @@ streamlit run streamlit_app.py
 
 Streamlit opens the app at http://localhost:8501. Then:
 
-1. Upload one or more documents and click **Run indexing**, or click **Index the 4 sample
-   documents** to use the sample AI library.
+1. Upload one or more documents and click **Run indexing**, or click **Index the sample
+   library** to use the sample AI documents.
 2. Explore steps 2–5 as they appear.
 3. Type a question (or pick a suggested one) and click **Ask** to see steps 7–10.
 4. Try changing **chunk size**, **chunk overlap**, **top_k** and **minimum similarity** in the

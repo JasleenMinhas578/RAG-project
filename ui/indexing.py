@@ -4,12 +4,14 @@ Every function draws from the saved st.session_state.index_data -- see ui.runner
 is produced.
 """
 import html
+import os
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 
 from src import config
+from src.data_loader import LOADERS
 from src.visuals import (
     PREVIEW_DIMS,
     chips_html,
@@ -35,7 +37,8 @@ def render_load(index_data):
                 "Each file is opened and its plain text is extracted. A PDF gives one piece of text per page, "
                 "a CSV file one per row, and a text or Word file one piece for the whole file. Layout and "
                 "images are dropped; only the words remain.",
-                hood=[("loaders", "PyPDFLoader · Docx2txtLoader · CSVLoader · TextLoader"),
+                hood=[("types", " · ".join(sorted({LOADERS[os.path.splitext(name)[1].lower()][0]
+                                                    for name in index_data["per_file"]}))),
                       ("in → out", f"{plural(len(index_data['per_file']), 'file')} → "
                                    f"{plural(index_data['n_docs'], 'text piece')}")])
     if index_data.get("skipped"):
@@ -127,8 +130,7 @@ def render_embed(index_data):
                 "A computer cannot compare the meaning of words directly, so each chunk is turned into a list "
                 "of numbers. Texts with similar meaning get similar numbers. This runs on your own computer "
                 f"with a free model (<code>{config.DEFAULT_EMBEDDING_MODEL}</code>), so no API is used.",
-                hood=[("model", f"sentence-transformers/{config.DEFAULT_EMBEDDING_MODEL}"),
-                      ("runs", "inside this app, no API"),
+                hood=[("model", config.DEFAULT_EMBEDDING_MODEL),
                       ("in → out", f"{plural(len(texts), 'chunk')} → {len(texts)} × {dims} matrix")])
     term("Embedding (also called a vector)", f"a list of {dims} numbers that represents the meaning of a piece "
          f"of text. Every chunk gets its own list, and every list has exactly {dims} numbers.", "index")
@@ -194,7 +196,7 @@ def render_index(index_data):
                 "All embeddings are saved in a FAISS index. It is built to answer one question very fast: "
                 "which stored vectors are closest to a new vector? Step 8 uses exactly this to find chunks "
                 "that match your question.",
-                hood=[("index", "faiss.IndexFlatL2 (exact search)"), ("plus", "a metadata list in the same order"),
+                hood=[("index", f"faiss.{type(store.index).__name__}"),
                       ("in → out", f"{len(texts)} × {dims} matrix → {store.ntotal} searchable vectors")])
     vectors_col, dims_col, memory_col = st.columns(3)
     vectors_col.metric("Vectors stored", store.ntotal)

@@ -13,32 +13,31 @@ SAMPLE_DIR = Path(__file__).resolve().parent.parent / "samples"
 # RAG gets a real outline, and one CSV, so step 2 shows a file loaded as one piece per row.
 SAMPLE_DOCS = (
     ("history_of_ai.md", "🏛️", "A short history of AI",
-     "From Turing's question in 1950 through the AI winters, Deep Blue and AlphaGo to ChatGPT."),
+     "Turing to ChatGPT, via the AI winters and AlphaGo."),
     ("how_transformers_work.md", "🧠", "How transformers work",
-     "Tokens, embeddings, self-attention, multi-head attention and the context window."),
+     "Tokens, embeddings, attention, context windows."),
     ("training_llms_and_rag.md", "🏋️", "Training LLMs, and why they need RAG",
-     "Pretraining, fine-tuning, RLHF, hallucinations, vector search and evaluating RAG."),
+     "Pretraining, RLHF, hallucinations, vector search."),
     ("ai_glossary.csv", "📖", "AI glossary",
-     "Twenty-one terms, one per row: a CSV file, so each row becomes its own piece of text."),
+     "Key terms, one per CSV row."),
 )
 
 # (question, mode it shows best, what to watch for)
 SAMPLE_QUESTIONS = (
     ("How does self-attention decide which words to focus on?", modes.MODE_CLASSIC,
-     "The answer sits in one section of the transformer guide. Watch where the closest chunks land on the map."),
+     "Watch where the closest chunks land on the map."),
     ("What is RLHF?", modes.MODE_KEYWORD,
-     "A short acronym. See whether exact-word search finds it more directly than meaning search."),
+     "An acronym: does exact-word search beat meaning search?"),
     ("What caused the AI winters?", modes.MODE_VECTORLESS,
-     "The history has clear headings, so Gemini can pick sections from the outline without any vectors."),
+     "Gemini picks sections from the headings, no vectors."),
     ("What is 17 times 23?", modes.MODE_AGENTIC,
-     "Nothing to do with the documents, so the router should skip retrieval and answer directly."),
+     "Off-topic, so the router should skip retrieval."),
     ("Why do language models hallucinate, and how does RAG help?", modes.MODE_EVALUATION,
-     "The answer spans two sections. The judge grades whether it stays grounded in the chunks."),
+     "A judge grades how grounded the answer is."),
     ("Who founded OpenAI?", modes.MODE_CLASSIC,
-     "Not in the documents. The answer should say so instead of guessing; tick the without-documents "
-     "comparison to see what the model says from memory."),
+     "Not in the documents: it should say so, not guess."),
     ("When did AlphaGo beat Lee Sedol, and how did it work?", modes.MODE_COMPARE,
-     "Runs the same question through several modes so you can compare answers and scores side by side."),
+     "Several designs answer side by side."),
 )
 
 

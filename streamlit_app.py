@@ -17,7 +17,7 @@ import streamlit as st
 
 from src import config, modes
 from src.data_loader import UPLOAD_TYPES, UPLOAD_TYPES_LABEL
-from src.visuals import CSS, FLOW_LEGEND, hero_html
+from src.visuals import CSS, FLOW_LEGEND, hero_html, stage_steps
 from ui import indexing, mode_cards, query, runners, samples
 from ui.components import clear_index_widgets, redraw_flow, stage_banner, step_header
 from ui.mode_copy import mode_intro, render_modes_overview
@@ -66,22 +66,18 @@ settings = {"top_k": top_k, "min_similarity": min_similarity}
 st.html(hero_html())
 
 st.subheader("Map of the pipeline")
-st.caption("It lights up live while a step runs, and each box fills in with the real size of your data.")
 flow_placeholder = st.empty()
 redraw_flow(flow_placeholder)
 st.html(FLOW_LEGEND)
-st.caption("This diagram shows Classic RAG. The other modes in the query stage explain their own steps.")
+st.caption("Shows Classic RAG. The other modes draw their own diagram.")
 
 index_data = st.session_state.index_data
 
-stage_banner("index", "Stage 1 of 2 · runs once per upload", "Indexing: build the searchable library",
-             "Your files are turned into text, cut into chunks, converted to vectors and stored in a FAISS index. "
-             "Steps 1 to 5.")
+stage_banner("index", "Stage 1 · once per upload", "Indexing", stage_steps("index"))
 
 with st.container(border=True):
     step_header(1, "Upload documents", "index",
-                "Add the files you want to ask questions about, or use the sample library about AI below. "
-                "The app answers only from these files, never from the internet.",
+                "Answers come only from these files, never from the internet.",
                 hood=[("accepts", ", ".join(UPLOAD_TYPES)),
                       ("limit", f"{config.MAX_FILES} files · {config.MAX_TOTAL_MB} MB · {config.MAX_CHUNKS} chunks")])
     uploaded_files = st.file_uploader(
@@ -103,17 +99,16 @@ with st.container(border=True):
         st.caption("Currently indexed: " + ", ".join(index_data["files"]))
 
 if not index_data:
-    st.info("Upload at least one file and click **Run indexing** to see steps 2 to 5.")
+    st.info("Index a document to see steps 2–5.")
 else:
     for render in (indexing.render_load, indexing.render_chunk, indexing.render_embed, indexing.render_index):
         with st.container(border=True):
             render(index_data)
 
-stage_banner("query", "Stage 2 of 2 · runs once per question", "Query: find the right chunks and answer",
-             "Pick a RAG mode, ask a question, and follow that mode's numbered steps from search to answer.")
+stage_banner("query", "Stage 2 · once per question", "Query", "Pick a RAG mode, ask, and follow its steps.")
 
 if not index_data:
-    st.info("The query stage searches the index built above, so run indexing first.")
+    st.info("Index a document first: the query stage searches that index.")
     render_modes_overview()
 else:
     with st.container(border=True):

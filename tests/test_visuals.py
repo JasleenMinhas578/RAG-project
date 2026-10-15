@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import pytest
 
 from src.visuals import (
-    FLOW_DETAILS,
     FLOW_STEPS,
     agentic_flow_svg,
     build_flow_svg,
@@ -25,6 +24,7 @@ from src.visuals import (
     ranked_html,
     retrieval_map_figure,
     scores_html,
+    stage_steps,
     step_header_html,
 )
 
@@ -63,15 +63,19 @@ def test_flowchart_has_ten_steps_one_active_and_no_blank_lines():
     assert svg.count('class="node active"') == 1
 
 
-def test_flowchart_shows_default_details_until_real_sizes_replace_them():
-    default = build_flow_svg({})
-    assert FLOW_DETAILS["chunk"] in default
-    live = build_flow_svg({"chunk": "done"}, {"chunk": "87 chunks", "prompt": "<b>" + "x" * 40})
-    assert "87 chunks" in live and FLOW_DETAILS["chunk"] not in live
-    assert FLOW_DETAILS["embed_docs"] in live  # steps without a real size keep their default
+def test_flowchart_shows_a_size_line_only_for_steps_with_real_sizes():
+    assert 'class="detail"' not in build_flow_svg({})  # nothing has run: no made-up sizes
+    live = build_flow_svg({"chunk": "done"}, {"chunk": "98 chunks", "prompt": "<b>" + "x" * 40})
+    assert live.count('class="detail"') == 2
+    assert "98 chunks" in live
     assert "<b>" not in live and "&lt;b&gt;" in live  # escaped
-    assert "x" * 40 not in live and "…" in live  # long details are shortened to fit the box
+    assert "x" * 40 not in live and "…" in live  # long sizes are shortened to fit the box
     assert "\n\n" not in live
+
+
+def test_stage_steps_reads_the_step_labels_from_the_flowchart():
+    assert stage_steps("index").startswith("Upload documents → Load & parse")
+    assert stage_steps("index").count("→") == 4
 
 
 def test_hero_names_the_page_and_both_stages_and_has_no_blank_lines():

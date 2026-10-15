@@ -12,17 +12,16 @@ from ui.components import label
 
 
 def render_sample_library(chunk_size: int, chunk_overlap: int, flow_placeholder):
-    label("No file handy? Explore with a small library about AI")
+    label("No file? Try the AI sample library")
     st.html(sample_library_html(samples.SAMPLE_DOCS))
     render_sample_documents()
-    if st.button(f"Index the {len(samples.SAMPLE_DOCS)} sample documents", icon="🧪"):
+    if st.button("Index the sample library", icon="🧪"):
         runners.run_indexing(samples.sample_files(), chunk_size, chunk_overlap, flow_placeholder, sample=True)
 
 
 def render_sample_documents():
     """The full text of every sample, so a visitor can read what the answers will come from."""
-    with st.expander(f"📖 Read the {len(samples.SAMPLE_DOCS)} sample documents"):
-        st.caption("These are the exact files that get indexed. Download one to try uploading it yourself.")
+    with st.expander("📖 Read the sample documents"):
         names = [name for name, *_ in samples.SAMPLE_DOCS]
         for tab, name in zip(st.tabs([title for _, _, title, _ in samples.SAMPLE_DOCS]), names, strict=True):
             with tab:
@@ -49,8 +48,8 @@ def _use_question(question: str, mode: str):
 
 
 def render_sample_questions():
-    label("Questions to try on the sample library")
-    st.caption("Each one fills in the question and switches to the RAG mode that shows it best. Then press Ask.")
+    label("Try a question")
+    st.caption("Fills in the question and picks the mode that shows it best.")
     questions = list(enumerate(samples.SAMPLE_QUESTIONS))
     for row in range(0, len(questions), 2):  # one st.columns per row, so cards in a row line up
         for column, (k, (question, mode, why)) in zip(st.columns(2, gap="small"), questions[row:row + 2],

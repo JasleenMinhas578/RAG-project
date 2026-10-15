@@ -44,15 +44,10 @@ CSS = """
 .rag-journey .pill {display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .7rem; border-radius:999px;
   border:1px solid; background:rgba(255,255,255,.06); color:#fff; font-size:.93rem; white-space:nowrap}
 .rag-journey .arr {opacity:.45; color:#fff}
-.rag-howto {display:grid; grid-template-columns:repeat(auto-fit, minmax(15rem, 1fr)); gap:.7rem}
-.rag-howto > div {display:flex; gap:.65rem; align-items:flex-start; background:rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:.75rem .9rem; font-size:.93rem; line-height:1.5}
-.rag-howto b {color:#fff}
+.rag-howto {display:flex; flex-wrap:wrap; gap:.5rem 1.4rem; color:#fff; font-size:.95rem}
+.rag-howto > span {display:inline-flex; align-items:center; gap:.5rem}
 .rag-howto .n {flex:none; width:1.7rem; height:1.7rem; border-radius:50%; background:#fff; color:#0B1530;
   font-weight:800; display:flex; align-items:center; justify-content:center; font-size:.9rem}
-.rag-hero .local {margin-top:1rem; font-size:.88rem; opacity:.85}
-.rag-hero .local code {background:rgba(255,255,255,.1); color:#E2E8F0; border-radius:5px; padding:.05rem .35rem;
-  font-size:.82rem}
 .rag-stage {display:flex; gap:1rem; align-items:center; border-radius:14px; padding:1rem 1.2rem; margin:1.8rem 0 .5rem;
   color:#fff; box-shadow:0 6px 20px -12px rgba(0,0,0,.5)}
 .rag-stage .ic {flex:none; width:3.1rem; height:3.1rem; border-radius:12px; background:rgba(255,255,255,.16);
@@ -78,8 +73,6 @@ CSS = """
   padding:.05rem .5rem}
 .rag-sq .q {font-weight:700; font-size:1rem; line-height:1.4; margin:.4rem 0 .25rem}
 .rag-sq .w {font-size:.86rem; opacity:.78; line-height:1.45}
-.rag-legend code {font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.8rem; padding:.05rem .4rem;
-  border-radius:5px; border:1px solid rgba(127,127,127,.35); background:rgba(127,127,127,.08)}
 .rag-step {display:flex; gap:.85rem; align-items:flex-start; margin:.1rem 0 .5rem}
 .rag-badge {flex:none; width:2.2rem; height:2.2rem; border-radius:50%; color:#fff; font-weight:700;
   font-size:1.02rem; display:flex; align-items:center; justify-content:center}
@@ -190,51 +183,25 @@ CSS = """
 # Flowchart (inline SVG, so the active step can pulse and each step has a hover tip)
 # --------------------------------------------------------------------------
 
-# (id, step number, stage, column, two label lines, plain-language description)
+# (id, step number, stage, column, two label lines, one-line description shown on hover)
 FLOW_STEPS = [
-    ("upload", 1, "index", 0, ("Upload", "documents"),
-     "You add your files. Nothing is processed until you click Run."),
-    ("load", 2, "index", 1, ("Load &", "parse"),
-     "Each file is opened and its plain text is pulled out, for example one piece of text per PDF page."),
-    ("chunk", 3, "index", 2, ("Split into", "chunks"),
-     "The text is cut into short, slightly overlapping pieces called chunks, so later only the relevant parts are "
-     "used."),
-    ("embed_docs", 4, "index", 3, ("Embed", "chunks"),
-     "Each chunk becomes a list of 384 numbers (an embedding) that represents its meaning. Runs on your computer, "
-     "free."),
-    ("index", 5, "index", 4, ("Store in", "FAISS index"),
-     "All embeddings are saved in a FAISS index, a structure that quickly finds the vectors closest to a new one."),
-    ("question", 6, "query", 3, ("Ask a", "question"),
-     "You type a question about your documents."),
-    ("embed_q", 7, "query", 4, ("Embed the", "question"),
-     "Your question becomes 384 numbers with the same model, so it can be compared with every chunk."),
-    ("retrieve", 8, "query", 5, ("Retrieve", "top chunks"),
-     "The FAISS index built in step 5 returns the closest chunks. Chunks below the minimum similarity are left out."),
-    ("prompt", 9, "query", 6, ("Build the", "prompt"),
-     "The retrieved chunks and your question are combined into one message (the prompt) for the AI model."),
-    ("generate", 10, "query", 7, ("Generate", "answer"),
-     "Google Gemini reads the prompt and writes an answer based only on the retrieved chunks."),
+    ("upload", 1, "index", 0, ("Upload", "documents"), "Your files. Nothing runs until you start indexing."),
+    ("load", 2, "index", 1, ("Load &", "parse"), "Each file's plain text is extracted."),
+    ("chunk", 3, "index", 2, ("Split into", "chunks"), "The text is cut into short, overlapping chunks."),
+    ("embed_docs", 4, "index", 3, ("Embed", "chunks"), "Each chunk becomes a vector that captures its meaning."),
+    ("index", 5, "index", 4, ("Store in", "FAISS index"), "The vectors go into an index for nearest-neighbor search."),
+    ("question", 6, "query", 3, ("Ask a", "question"), "You ask a question about your documents."),
+    ("embed_q", 7, "query", 4, ("Embed the", "question"), "The question becomes a vector with the same model."),
+    ("retrieve", 8, "query", 5, ("Retrieve", "top chunks"), "FAISS finds the closest chunks; weak ones are dropped."),
+    ("prompt", 9, "query", 6, ("Build the", "prompt"), "The chunks and the question are combined into one prompt."),
+    ("generate", 10, "query", 7, ("Generate", "answer"), "Gemini answers from that prompt alone."),
 ]
-# The small monospace line in each box: what the data looks like at that step. These are the
-# defaults before anything has run; build_flow_svg's `details` replaces them with real sizes.
-FLOW_DETAILS = {
-    "upload": "PDF, DOCX, CSV…",
-    "load": "file → text",
-    "chunk": f"≤ {config.DEFAULT_CHUNK_SIZE} chars each",
-    "embed_docs": "384 numbers each",
-    "index": "IndexFlatL2",
-    "question": "your words",
-    "embed_q": "→ 384 numbers",
-    "retrieve": "top-k by cosine",
-    "prompt": "chunks + question",
-    "generate": "Gemini",
-}
 DETAIL_MAX = 17  # characters that fit in a box at the detail font size
 BOX_W, BOX_H, PITCH, LEFT = 120, 72, 144, 16
 FLOW_W = 2 * LEFT + 7 * PITCH + BOX_W
 ROW_TOP = {"index": 50, "query": 196}
 HINT_Y = 290
-FLOW_H = HINT_Y + 84
+FLOW_H = HINT_Y + 50
 
 
 def _box_x(col: int) -> int:
@@ -262,18 +229,18 @@ def _short(text: str) -> str:
 
 
 def build_flow_svg(status: dict, details: dict | None = None) -> str:
-    """The pipeline diagram. `details` maps a step id to the real size of its data (for example
-    "87 chunks"), shown in place of that step's FLOW_DETAILS default.
+    """The pipeline diagram. `details` maps a step id to the real size of its data from the last
+    run (for example "98 chunks"); a step without one shows no size line.
 
     Must stay free of blank lines: the app renders it with st.markdown, and a blank line would
     end the raw-HTML block."""
-    details = {**FLOW_DETAILS, **(details or {})}
+    details = details or {}
     by_id = {s[0]: s for s in FLOW_STEPS}
     parts = []
 
     for stage, (first, last), label in (
-        ("index", (0, 4), "Indexing (runs once per upload)"),
-        ("query", (3, 7), "Query (runs once per question)"),
+        ("index", (0, 4), "Indexing · once per upload"),
+        ("query", (3, 7), "Query · once per question"),
     ):
         color = STAGE_COLOR[stage]
         x = _box_x(first) - 12
@@ -301,11 +268,10 @@ def build_flow_svg(status: dict, details: dict | None = None) -> str:
     parts.append(f'<text x="{(x1 + x2) / 2 + 16:.0f}" y="{(y1 + y2) / 2 - 1:.0f}" font-size="12.5" '
                  f'font-style="italic" fill="currentColor" opacity="0.8">retrieval searches this index</text>')
 
-    parts.append(f'<rect x="10" y="{HINT_Y}" width="{FLOW_W - 20}" height="76" rx="10" '
+    parts.append(f'<rect x="10" y="{HINT_Y}" width="{FLOW_W - 20}" height="44" rx="10" '
                  'fill="currentColor" fill-opacity="0.05"/>')
-    parts.append(f'<text class="hint" x="{LEFT + 6}" y="{HINT_Y + 28}" font-size="14.5" fill="currentColor" '
-                 'opacity="0.72">Hover over (or tap) any step to see what it does. The small line in each box is the '
-                 'data at that point, with real sizes once you run it.</text>')
+    parts.append(f'<text class="hint" x="{LEFT + 6}" y="{HINT_Y + 27}" font-size="14.5" fill="currentColor" '
+                 'opacity="0.72">Hover or tap a step to see what it does.</text>')
 
     for step_id, num, stage, col, (line1, line2), desc in FLOW_STEPS:
         state = status.get(step_id, "pending")
@@ -317,27 +283,30 @@ def build_flow_svg(status: dict, details: dict | None = None) -> str:
             fill_opacity, stroke, stroke_w, text_fill, badge = 0.2, ACTIVE_COLOR, 3, "currentColor", f"{num} · running"
         else:
             fill_opacity, stroke, stroke_w, text_fill, badge = 0.1, color, 1.5, "currentColor", str(num)
-        tip = "".join(
-            f'<text x="{LEFT + 6}" y="{HINT_Y + 28 + i * 19}" font-size="14.5" fill="currentColor">'
-            f'{html.escape(line)}</text>'
-            for i, line in enumerate(textwrap.wrap(f"Step {num} · {line1} {line2}: {desc}", 140)[:3])
-        )
+        tip = (f'<text x="{LEFT + 6}" y="{HINT_Y + 27}" font-size="14.5" fill="currentColor">'
+               f'<tspan font-weight="700">{num} · {html.escape(line1)} {html.escape(line2)}</tspan> — '
+               f'{html.escape(desc)}</text>')
+        detail = details.get(step_id)
+        size_line = "" if not detail else (
+            f'<line x1="{x + 12}" y1="{y + 55}" x2="{x + BOX_W - 12}" y2="{y + 55}" stroke="{text_fill}" '
+            f'stroke-opacity="0.25"/>'
+            f'<text class="detail" x="{x + BOX_W / 2}" y="{y + 67}" font-size="11" text-anchor="middle" '
+            f'font-family="{MONO}" fill="{text_fill}" opacity="0.85">{html.escape(_short(detail))}</text>')
+        label_y = y + (33 if detail else 40)
         cx = x + BOX_W / 2
         parts.append(
-            f'<g class="node{" active" if state == "active" else ""}"><title>{html.escape(desc)}</title>'
+            # No <title>: the browser's own tooltip would repeat the hint panel's text and cover the
+            # neighboring boxes. The panel below the diagram is the one place the description shows.
+            f'<g class="node{" active" if state == "active" else ""}">'
             f'<rect class="box" x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="9" fill="{color}" '
             f'fill-opacity="{fill_opacity}" stroke="{stroke}" stroke-width="{stroke_w}"/>'
             f'<text x="{x + 9}" y="{y + 15}" font-size="12" font-weight="700" '
             f'fill="{text_fill}" opacity="0.85">{badge}</text>'
-            f'<text x="{cx}" y="{y + 33}" font-size="14.5" font-weight="600" text-anchor="middle" '
+            f'<text x="{cx}" y="{label_y}" font-size="14.5" font-weight="600" text-anchor="middle" '
             f'fill="{text_fill}">{html.escape(line1)}</text>'
-            f'<text x="{cx}" y="{y + 49}" font-size="14.5" font-weight="600" text-anchor="middle" '
+            f'<text x="{cx}" y="{label_y + 16}" font-size="14.5" font-weight="600" text-anchor="middle" '
             f'fill="{text_fill}">{html.escape(line2)}</text>'
-            f'<line x1="{x + 12}" y1="{y + 55}" x2="{x + BOX_W - 12}" y2="{y + 55}" stroke="{text_fill}" '
-            f'stroke-opacity="0.25"/>'
-            f'<text class="detail" x="{cx}" y="{y + 67}" font-size="11" text-anchor="middle" font-family="{MONO}" '
-            f'fill="{text_fill}" opacity="0.8">{html.escape(_short(details[step_id]))}</text>'
-            f'<g class="tip">{tip}</g></g>'
+            f'{size_line}<g class="tip">{tip}</g></g>'
         )
 
     return (f'<div class="rag-flow-wrap"><svg class="rag-flow" viewBox="0 0 {FLOW_W} {FLOW_H}" role="img" '
@@ -347,11 +316,10 @@ def build_flow_svg(status: dict, details: dict | None = None) -> str:
 FLOW_LEGEND = (
     '<div class="rag-scroll-hint">Swipe the diagram sideways to see the whole pipeline →</div>'
     '<div class="rag-legend">'
-    f'<span><i style="border-color:{INDEX_COLOR};background:{INDEX_COLOR}1A"></i>not run yet</span>'
-    f'<span><i style="border-color:{ACTIVE_COLOR}"></i>running now (pulsing border)</span>'
-    f'<span><i style="border-color:{INDEX_COLOR};background:{INDEX_COLOR}"></i>indexing step done</span>'
-    f'<span><i style="border-color:{QUERY_COLOR};background:{QUERY_COLOR}"></i>query step done</span>'
-    '<span><code>87 chunks</code>the data at that step</span>'
+    f'<span><i style="border-color:{INDEX_COLOR};background:{INDEX_COLOR}1A"></i>waiting</span>'
+    f'<span><i style="border-color:{ACTIVE_COLOR}"></i>running</span>'
+    f'<span><i style="border-color:{INDEX_COLOR};background:{INDEX_COLOR}"></i>'
+    f'<i style="border-color:{QUERY_COLOR};background:{QUERY_COLOR};margin-left:-.2rem"></i>done</span>'
     '</div>'
 )
 
@@ -378,30 +346,22 @@ def hero_html() -> str:
             for icon, name in DATA_JOURNEY[stage]
         )
         rows.append(f'<div class="row"><span class="stage" style="color:{color}">{label}</span>{pills}</div>')
-    steps = (
-        ("Upload a document", "or load the sample AI library. Steps 1–5 show the text, chunks and vectors "
-                              "built from it."),
-        ("Ask a question.", "Steps 6–10 show which chunks were found, the exact prompt, and the answer."),
-        ("Change one thing,", "such as a sidebar setting or the RAG mode, then run again and see what moves."),
-    )
-    howto = "".join(f'<div><span class="n">{k}</span><span><b>{title}</b> {text}</span></div>'
-                    for k, (title, text) in enumerate(steps, start=1))
+    steps = ("Index a document", "Ask a question", "Change a setting and compare")
+    howto = "".join(f'<span><b class="n">{k}</b>{text}</span>' for k, text in enumerate(steps, start=1))
     return (
         '<div class="rag-hero">'
-        '<div class="eyebrow">An interactive look inside Retrieval-Augmented Generation</div>'
+        '<div class="eyebrow">Inside Retrieval-Augmented Generation</div>'
         '<h1>🔍 RAG Pipeline Explorer</h1>'
-        '<p class="lede"><b>RAG</b> lets an AI model answer questions about <i>your</i> documents: it first '
-        '<b>retrieves</b> the passages that match the question, then has the model <b>generate</b> an answer from '
-        'only those. Most apps hide all of that. This one opens it up: every step below runs on your own files and '
-        'shows its real output, from the chunks your text is cut into to the numbers that stand for their meaning '
-        'and the exact prompt the model reads.</p>'
+        '<p class="lede">Run every step of RAG on your own documents and see the real output of each one.</p>'
         f'<div class="rag-journey">{"".join(rows)}</div>'
         f'<div class="rag-howto">{howto}</div>'
-        '<div class="local">No black boxes: embeddings (<code>sentence-transformers</code>), vector search '
-        '(<code>FAISS</code>) and keyword search (<code>TF-IDF</code>) run inside this app. Only the calls to '
-        '<code>Gemini</code> leave it.</div>'
         '</div>'
     )
+
+
+def stage_steps(stage: str) -> str:
+    """A stage's steps as one line ("Upload documents → Load & parse → …"), read from FLOW_STEPS."""
+    return " → ".join(f"{line1} {line2}" for _, _, s, _, (line1, line2), _ in FLOW_STEPS if s == stage)
 
 
 STAGE_ICONS = {"index": "🗂️", "query": "💬"}

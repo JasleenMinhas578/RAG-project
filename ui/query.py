@@ -34,7 +34,7 @@ def render_embed_question(query_result):
                 "Your question goes through the same embedding model as the chunks, so it also becomes a list "
                 f"of {len(query_result['q_vec'])} numbers. Using the same model matters: only then do the question's "
                 "numbers and the chunks' numbers mean the same thing and can be compared.",
-                hood=[("model", f"sentence-transformers/{config.DEFAULT_EMBEDDING_MODEL} (same as step 4)"),
+                hood=[("model", config.DEFAULT_EMBEDDING_MODEL),
                       ("in → out", f"1 question → 1 × {len(query_result['q_vec'])} vector")])
     question_col, embedding_col = st.columns(2, gap="large")
     with question_col:
@@ -51,7 +51,7 @@ def render_retrieve(index_data, query_result):
                 f"The FAISS index compares the question's numbers with every stored vector and returns the "
                 f"{len(kept) + len(dropped)} closest chunks. Chunks scoring below the minimum similarity "
                 f"({query_result['min_similarity']:.2f}) are left out, so only relevant text reaches the AI model.",
-                hood=[("search", "FAISS L2 search → cosine similarity"),
+                hood=[("score", "cosine similarity"),
                       ("filter", f"similarity ≥ {query_result['min_similarity']:.2f}"),
                       ("in → out", f"{len(index_data['texts'])} vectors → top {len(kept) + len(dropped)} "
                                    f"→ {len(kept)} sent")])
@@ -105,8 +105,7 @@ def render_generate(query_result, show_scores: bool):
                 "Gemini reads the prompt and writes an answer. It was told to use only the context, so the answer "
                 "should come from your documents, not from general knowledge. Citations like [#1] point to the "
                 "retrieved chunks above.",
-                hood=[("model", f"Gemini ({config.DEFAULT_GEMINI_MODEL}) via ChatGoogleGenerativeAI"),
-                      ("in → out", "prompt → answer with [#n] citations")])
+                hood=[("model", config.DEFAULT_GEMINI_MODEL)])
     if query_result["error"]:
         st.error(query_result["error"])
         return
@@ -159,8 +158,7 @@ def render_judge(query_result):
                 "Gemini is called a second time, now as a judge. It gets the question, the retrieved chunks and the "
                 "answer, and scores the answer on four measures from 1 (poor) to 5 (excellent), each with a "
                 "one-line reason.",
-                hood=[("model", f"Gemini ({config.DEFAULT_GEMINI_MODEL}) as judge"),
-                      ("in → out", "question + chunks + answer → 4 scores")])
+                hood=[("judge", config.DEFAULT_GEMINI_MODEL)])
     term("LLM-as-a-judge", "using an AI language model to grade an AI answer, so many answers can be checked "
          "automatically.", "query")
     if query_result.get("error"):

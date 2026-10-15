@@ -155,10 +155,11 @@ numbers match the flowchart.
   blank lines so markdown treats it as one raw HTML block (a test checks this). The pulse on the
   active step and the hover tips are CSS in the `CSS` block (injected via `st.html`, which keeps
   `<style>`). Rows are column-offset so step 8 sits right of step 5, which keeps every arrow
-  left-to-right and non-crossing; preserve that if steps are added. Each box also has a small monospace
-  line for the data at that step: `FLOW_DETAILS` defaults, replaced by real sizes ("87 chunks", "4 of 4 sent")
-  that the runners pass to `mark(..., detail=)` and keep in `st.session_state.flow_details`, cleared
-  alongside `flow_status`.
+  left-to-right and non-crossing; preserve that if steps are added. Once a step has run, its box shows the
+  real size of its data ("98 chunks", "4 of 4 sent"), passed by the runners to `mark(..., detail=)` and
+  kept in `st.session_state.flow_details`, cleared alongside `flow_status`. There are deliberately no
+  placeholder values: a step that hasn't run shows no size line. Keep on-page copy short, and derive
+  values (index type, file types, model names) from the running objects or `config`.
 - **Explorer framing:** the page opens with `visuals.hero_html()` (the title lives there, not in `st.title`),
   stage banners come from `stage_banner_html`, and `step_header(..., hood=[(label, value), ...])` adds the
   "Under the hood" strip naming the real component and the input → output sizes for that step.
