@@ -19,6 +19,9 @@ ACTIVE_COLOR = "#F59E0B"
 NEGATIVE_COLOR = "#DC2626"
 MUTED_COLOR = "#9CA3AF"
 STAGE_COLOR = {"index": INDEX_COLOR, "query": QUERY_COLOR}
+STAGE_GRADIENT = {"index": "linear-gradient(120deg, #2563EB 0%, #1E3A8A 100%)",
+                  "query": "linear-gradient(120deg, #16A34A 0%, #14532D 100%)"}
+MONO = "ui-monospace, SFMono-Regular, Menlo, monospace"
 SOURCE_COLORS = ["#2563EB", "#DB2777", "#EA580C", "#0891B2", "#7C3AED"]
 RANK_COLORS = ["#E11D48", "#7C3AED", "#EA580C", "#0891B2", "#CA8A04",
                "#DB2777", "#4F46E5", "#0D9488", "#C026D3", "#92400E"]
@@ -26,11 +29,57 @@ PREVIEW_DIMS = config.VECTOR_PREVIEW_DIMS
 
 CSS = """
 <style>
-.rag-intro {border:1px solid rgba(127,127,127,.25); border-radius:12px; padding:1rem 1.2rem;
-  margin:.2rem 0 .6rem; font-size:1.02rem; line-height:1.6}
-.rag-stage {border-radius:12px; padding:.9rem 1.15rem; margin:1.6rem 0 .4rem; color:#fff}
-.rag-stage .t {font-size:1.3rem; font-weight:700}
-.rag-stage .s {font-size:.97rem; opacity:.93; margin-top:.15rem; line-height:1.5}
+.rag-hero {border-radius:18px; padding:1.7rem 1.9rem 1.5rem; margin:.1rem 0 1rem; color:#CBD5E1;
+  border:1px solid rgba(255,255,255,.08);
+  background:radial-gradient(circle at 1px 1px, rgba(255,255,255,.08) 1px, transparent 0) 0 0/22px 22px,
+             linear-gradient(135deg, #0B1530 0%, #0E2A55 55%, #0B3A2C 100%)}
+.rag-hero .eyebrow {font-size:.76rem; letter-spacing:.14em; text-transform:uppercase; font-weight:700; color:#7DD3FC}
+.rag-hero h1 {color:#fff; font-size:2.6rem; line-height:1.15; font-weight:800; margin:.35rem 0 .55rem; padding:0}
+.rag-hero .lede {font-size:1.08rem; line-height:1.65; max-width:58rem; margin:0}
+.rag-hero .lede b {color:#fff}
+.rag-journey {display:flex; flex-direction:column; gap:.55rem; margin:1.25rem 0 1.1rem}
+.rag-journey .row {display:flex; flex-wrap:wrap; align-items:center; gap:.4rem}
+.rag-journey .stage {font-size:.72rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+  min-width:6.2rem}
+.rag-journey .pill {display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .7rem; border-radius:999px;
+  border:1px solid; background:rgba(255,255,255,.06); color:#fff; font-size:.93rem; white-space:nowrap}
+.rag-journey .arr {opacity:.45; color:#fff}
+.rag-howto {display:grid; grid-template-columns:repeat(auto-fit, minmax(15rem, 1fr)); gap:.7rem}
+.rag-howto > div {display:flex; gap:.65rem; align-items:flex-start; background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:.75rem .9rem; font-size:.93rem; line-height:1.5}
+.rag-howto b {color:#fff}
+.rag-howto .n {flex:none; width:1.7rem; height:1.7rem; border-radius:50%; background:#fff; color:#0B1530;
+  font-weight:800; display:flex; align-items:center; justify-content:center; font-size:.9rem}
+.rag-hero .local {margin-top:1rem; font-size:.88rem; opacity:.85}
+.rag-hero .local code {background:rgba(255,255,255,.1); color:#E2E8F0; border-radius:5px; padding:.05rem .35rem;
+  font-size:.82rem}
+.rag-stage {display:flex; gap:1rem; align-items:center; border-radius:14px; padding:1rem 1.2rem; margin:1.8rem 0 .5rem;
+  color:#fff; box-shadow:0 6px 20px -12px rgba(0,0,0,.5)}
+.rag-stage .ic {flex:none; width:3.1rem; height:3.1rem; border-radius:12px; background:rgba(255,255,255,.16);
+  display:flex; align-items:center; justify-content:center; font-size:1.65rem}
+.rag-stage .e {font-size:.74rem; letter-spacing:.12em; text-transform:uppercase; font-weight:700; opacity:.8}
+.rag-stage .t {font-size:1.35rem; font-weight:700; line-height:1.3}
+.rag-stage .s {font-size:.97rem; opacity:.93; margin-top:.1rem; line-height:1.5}
+.rag-hood {display:flex; flex-wrap:wrap; align-items:center; gap:.35rem .45rem; margin:.15rem 0 .7rem 3.05rem}
+.rag-hood .k {font-size:.7rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; opacity:.65;
+  margin-right:.15rem}
+.rag-hood .v {font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.78rem; border-radius:6px;
+  padding:.1rem .45rem; background:rgba(127,127,127,.08); border:1px solid rgba(127,127,127,.22)}
+.rag-hood .v i {font-style:normal; opacity:.55; margin-right:.35rem}
+.rag-lib {display:grid; grid-template-columns:repeat(auto-fit, minmax(13rem, 1fr)); gap:.6rem; margin:.2rem 0 .7rem}
+.rag-lib > div {border:1px solid rgba(37,99,235,.3); background:rgba(37,99,235,.06); border-radius:12px;
+  padding:.7rem .85rem}
+.rag-lib .ic {font-size:1.45rem; line-height:1}
+.rag-lib .t {font-weight:700; margin:.35rem 0 .15rem; line-height:1.3}
+.rag-lib .d {font-size:.86rem; opacity:.82; line-height:1.45}
+.rag-lib .f {font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.74rem; opacity:.6; margin-top:.4rem}
+.rag-sq .m {display:inline-block; font-size:.72rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:#16A34A; border:1px solid rgba(22,163,74,.4); background:rgba(22,163,74,.08); border-radius:999px;
+  padding:.05rem .5rem}
+.rag-sq .q {font-weight:700; font-size:1rem; line-height:1.4; margin:.4rem 0 .25rem}
+.rag-sq .w {font-size:.86rem; opacity:.78; line-height:1.45}
+.rag-legend code {font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.8rem; padding:.05rem .4rem;
+  border-radius:5px; border:1px solid rgba(127,127,127,.35); background:rgba(127,127,127,.08)}
 .rag-step {display:flex; gap:.85rem; align-items:flex-start; margin:.1rem 0 .5rem}
 .rag-badge {flex:none; width:2.2rem; height:2.2rem; border-radius:50%; color:#fff; font-weight:700;
   font-size:1.02rem; display:flex; align-items:center; justify-content:center}
@@ -125,7 +174,7 @@ CSS = """
 .rag-flow-wrap {overflow-x:auto; -webkit-overflow-scrolling:touch}
 .rag-scroll-hint {display:none; font-size:.9rem; opacity:.75; margin:.1rem 0 .3rem}
 @media (max-width: 760px) {.rag-scroll-hint {display:block}}
-.rag-flow {min-width:980px; width:100%; height:auto; display:block}
+.rag-flow {min-width:860px; width:100%; height:auto; display:block}
 .rag-flow .node {cursor:help}
 .rag-flow .tip {opacity:0; transition:opacity .15s; pointer-events:none}
 .rag-flow .node:hover .tip {opacity:1}
@@ -166,9 +215,26 @@ FLOW_STEPS = [
     ("generate", 10, "query", 7, ("Generate", "answer"),
      "Google Gemini reads the prompt and writes an answer based only on the retrieved chunks."),
 ]
-FLOW_W, FLOW_H = 1230, 352
-BOX_W, BOX_H, PITCH, LEFT = 124, 58, 152, 20
-ROW_TOP = {"index": 48, "query": 188}
+# The small monospace line in each box: what the data looks like at that step. These are the
+# defaults before anything has run; build_flow_svg's `details` replaces them with real sizes.
+FLOW_DETAILS = {
+    "upload": "PDF, DOCX, CSV…",
+    "load": "file → text",
+    "chunk": f"≤ {config.DEFAULT_CHUNK_SIZE} chars each",
+    "embed_docs": "384 numbers each",
+    "index": "IndexFlatL2",
+    "question": "your words",
+    "embed_q": "→ 384 numbers",
+    "retrieve": "top-k by cosine",
+    "prompt": "chunks + question",
+    "generate": "Gemini",
+}
+DETAIL_MAX = 17  # characters that fit in a box at the detail font size
+BOX_W, BOX_H, PITCH, LEFT = 120, 72, 144, 16
+FLOW_W = 2 * LEFT + 7 * PITCH + BOX_W
+ROW_TOP = {"index": 50, "query": 196}
+HINT_Y = 290
+FLOW_H = HINT_Y + 84
 
 
 def _box_x(col: int) -> int:
@@ -187,9 +253,21 @@ def _arrow(x1, y1, x2, y2, dashed=False, color="currentColor", width=2) -> str:
     )
 
 
-def build_flow_svg(status: dict) -> str:
-    """The pipeline diagram. Must stay free of blank lines: the app renders it with st.markdown,
-    and a blank line would end the raw-HTML block."""
+def plural(n: int, word: str) -> str:
+    return f"{n:,} {word}{'' if n == 1 else 's'}"
+
+
+def _short(text: str) -> str:
+    return text if len(text) <= DETAIL_MAX else text[:DETAIL_MAX - 1] + "…"
+
+
+def build_flow_svg(status: dict, details: dict | None = None) -> str:
+    """The pipeline diagram. `details` maps a step id to the real size of its data (for example
+    "87 chunks"), shown in place of that step's FLOW_DETAILS default.
+
+    Must stay free of blank lines: the app renders it with st.markdown, and a blank line would
+    end the raw-HTML block."""
+    details = {**FLOW_DETAILS, **(details or {})}
     by_id = {s[0]: s for s in FLOW_STEPS}
     parts = []
 
@@ -223,11 +301,11 @@ def build_flow_svg(status: dict) -> str:
     parts.append(f'<text x="{(x1 + x2) / 2 + 16:.0f}" y="{(y1 + y2) / 2 - 1:.0f}" font-size="12.5" '
                  f'font-style="italic" fill="currentColor" opacity="0.8">retrieval searches this index</text>')
 
-    parts.append(f'<rect x="10" y="270" width="{FLOW_W - 20}" height="76" rx="10" '
+    parts.append(f'<rect x="10" y="{HINT_Y}" width="{FLOW_W - 20}" height="76" rx="10" '
                  'fill="currentColor" fill-opacity="0.05"/>')
-    parts.append(f'<text class="hint" x="{LEFT + 6}" y="298" font-size="14" fill="currentColor" opacity="0.72">'
-                 'Hover over (or tap) any step to see what it does. The step numbers match the numbered sections '
-                 'below.</text>')
+    parts.append(f'<text class="hint" x="{LEFT + 6}" y="{HINT_Y + 28}" font-size="14.5" fill="currentColor" '
+                 'opacity="0.72">Hover over (or tap) any step to see what it does. The small line in each box is the '
+                 'data at that point, with real sizes once you run it.</text>')
 
     for step_id, num, stage, col, (line1, line2), desc in FLOW_STEPS:
         state = status.get(step_id, "pending")
@@ -240,19 +318,25 @@ def build_flow_svg(status: dict) -> str:
         else:
             fill_opacity, stroke, stroke_w, text_fill, badge = 0.1, color, 1.5, "currentColor", str(num)
         tip = "".join(
-            f'<text x="{LEFT + 6}" y="{298 + i * 19}" font-size="14" fill="currentColor">{html.escape(line)}</text>'
-            for i, line in enumerate(textwrap.wrap(f"Step {num} · {line1} {line2}: {desc}", 150)[:3])
+            f'<text x="{LEFT + 6}" y="{HINT_Y + 28 + i * 19}" font-size="14.5" fill="currentColor">'
+            f'{html.escape(line)}</text>'
+            for i, line in enumerate(textwrap.wrap(f"Step {num} · {line1} {line2}: {desc}", 140)[:3])
         )
+        cx = x + BOX_W / 2
         parts.append(
             f'<g class="node{" active" if state == "active" else ""}"><title>{html.escape(desc)}</title>'
             f'<rect class="box" x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="9" fill="{color}" '
             f'fill-opacity="{fill_opacity}" stroke="{stroke}" stroke-width="{stroke_w}"/>'
-            f'<text x="{x + 9}" y="{y + 15}" font-size="11" font-weight="700" '
+            f'<text x="{x + 9}" y="{y + 15}" font-size="12" font-weight="700" '
             f'fill="{text_fill}" opacity="0.85">{badge}</text>'
-            f'<text x="{x + BOX_W / 2}" y="{y + 34}" font-size="13.5" font-weight="600" text-anchor="middle" '
+            f'<text x="{cx}" y="{y + 33}" font-size="14.5" font-weight="600" text-anchor="middle" '
             f'fill="{text_fill}">{html.escape(line1)}</text>'
-            f'<text x="{x + BOX_W / 2}" y="{y + 50}" font-size="13.5" font-weight="600" text-anchor="middle" '
+            f'<text x="{cx}" y="{y + 49}" font-size="14.5" font-weight="600" text-anchor="middle" '
             f'fill="{text_fill}">{html.escape(line2)}</text>'
+            f'<line x1="{x + 12}" y1="{y + 55}" x2="{x + BOX_W - 12}" y2="{y + 55}" stroke="{text_fill}" '
+            f'stroke-opacity="0.25"/>'
+            f'<text class="detail" x="{cx}" y="{y + 67}" font-size="11" text-anchor="middle" font-family="{MONO}" '
+            f'fill="{text_fill}" opacity="0.8">{html.escape(_short(details[step_id]))}</text>'
             f'<g class="tip">{tip}</g></g>'
         )
 
@@ -267,8 +351,95 @@ FLOW_LEGEND = (
     f'<span><i style="border-color:{ACTIVE_COLOR}"></i>running now (pulsing border)</span>'
     f'<span><i style="border-color:{INDEX_COLOR};background:{INDEX_COLOR}"></i>indexing step done</span>'
     f'<span><i style="border-color:{QUERY_COLOR};background:{QUERY_COLOR}"></i>query step done</span>'
+    '<span><code>87 chunks</code>the data at that step</span>'
     '</div>'
 )
+
+
+# --------------------------------------------------------------------------
+# Page framing: hero, stage banners, step headers
+# --------------------------------------------------------------------------
+
+# (stage, icon, label) -- the shape the data takes as it moves through each stage
+DATA_JOURNEY = {
+    "index": (("📄", "Your files"), ("🧾", "Plain text"), ("✂️", "Chunks"), ("🔢", "Vectors"), ("🗂️", "FAISS index")),
+    "query": (("❓", "Question"), ("🔢", "Vector"), ("🎯", "Closest chunks"), ("📝", "Prompt"), ("💬", "Answer")),
+}
+JOURNEY_COLOR = {"index": "#60A5FA", "query": "#4ADE80"}  # lighter stage colors, readable on the dark hero
+
+
+def hero_html() -> str:
+    """The top of the page: what this site is, the path your data takes, and how to explore it."""
+    rows = []
+    for stage, label in (("index", "Indexing"), ("query", "Query")):
+        color = JOURNEY_COLOR[stage]
+        pills = '<span class="arr">→</span>'.join(
+            f'<span class="pill" style="border-color:{color}80">{icon} {name}</span>'
+            for icon, name in DATA_JOURNEY[stage]
+        )
+        rows.append(f'<div class="row"><span class="stage" style="color:{color}">{label}</span>{pills}</div>')
+    steps = (
+        ("Upload a document", "or load the sample AI library. Steps 1–5 show the text, chunks and vectors "
+                              "built from it."),
+        ("Ask a question.", "Steps 6–10 show which chunks were found, the exact prompt, and the answer."),
+        ("Change one thing,", "such as a sidebar setting or the RAG mode, then run again and see what moves."),
+    )
+    howto = "".join(f'<div><span class="n">{k}</span><span><b>{title}</b> {text}</span></div>'
+                    for k, (title, text) in enumerate(steps, start=1))
+    return (
+        '<div class="rag-hero">'
+        '<div class="eyebrow">An interactive look inside Retrieval-Augmented Generation</div>'
+        '<h1>🔍 RAG Pipeline Explorer</h1>'
+        '<p class="lede"><b>RAG</b> lets an AI model answer questions about <i>your</i> documents: it first '
+        '<b>retrieves</b> the passages that match the question, then has the model <b>generate</b> an answer from '
+        'only those. Most apps hide all of that. This one opens it up: every step below runs on your own files and '
+        'shows its real output, from the chunks your text is cut into to the numbers that stand for their meaning '
+        'and the exact prompt the model reads.</p>'
+        f'<div class="rag-journey">{"".join(rows)}</div>'
+        f'<div class="rag-howto">{howto}</div>'
+        '<div class="local">No black boxes: embeddings (<code>sentence-transformers</code>), vector search '
+        '(<code>FAISS</code>) and keyword search (<code>TF-IDF</code>) run inside this app. Only the calls to '
+        '<code>Gemini</code> leave it.</div>'
+        '</div>'
+    )
+
+
+STAGE_ICONS = {"index": "🗂️", "query": "💬"}
+
+
+def stage_banner_html(stage: str, eyebrow: str, title: str, subtitle: str) -> str:
+    return (f'<div class="rag-stage" style="background:{STAGE_GRADIENT[stage]}">'
+            f'<div class="ic">{STAGE_ICONS[stage]}</div>'
+            f'<div><div class="e">{eyebrow}</div><div class="t">{title}</div><div class="s">{subtitle}</div></div>'
+            '</div>')
+
+
+def sample_library_html(docs) -> str:
+    """One card per sample document: (file name, icon, title, description) tuples."""
+    cards = "".join(
+        f'<div><div class="ic">{icon}</div><div class="t">{html.escape(title)}</div>'
+        f'<div class="d">{html.escape(text)}</div><div class="f">{html.escape(name)}</div></div>'
+        for name, icon, title, text in docs
+    )
+    return f'<div class="rag-lib">{cards}</div>'
+
+
+def sample_question_html(question: str, mode: str, why: str) -> str:
+    """A suggested question: the RAG mode it shows best, the question, and what to watch for."""
+    return (f'<div class="rag-sq"><span class="m">{html.escape(mode)}</span>'
+            f'<div class="q">{html.escape(question)}</div><div class="w">{html.escape(why)}</div></div>')
+
+
+def step_header_html(num, title: str, stage: str, description: str, hood=()) -> str:
+    """A numbered step title. `hood` is (label, value) pairs naming what really runs at this step,
+    such as the library and the input → output sizes; values are escaped, the description is not
+    (callers put <code> in it)."""
+    header = (f'<div class="rag-step"><div class="rag-badge" style="background:{STAGE_COLOR[stage]}">{num}</div>'
+              f'<div><div class="t">{title}</div><div class="d">{description}</div></div></div>')
+    if not hood:
+        return header
+    chips = "".join(f'<span class="v"><i>{html.escape(k)}</i>{html.escape(v)}</span>' for k, v in hood)
+    return f'{header}<div class="rag-hood"><span class="k">⚙ Under the hood</span>{chips}</div>'
 
 
 # (x, y, label line 1, label line 2) for the Agentic RAG two-path diagram

@@ -17,14 +17,14 @@ import streamlit as st
 
 from src import config, modes
 from src.data_loader import UPLOAD_TYPES, UPLOAD_TYPES_LABEL
-from src.visuals import CSS, FLOW_LEGEND, INDEX_COLOR, QUERY_COLOR
-from ui import indexing, mode_cards, query, runners
+from src.visuals import CSS, FLOW_LEGEND, hero_html
+from ui import indexing, mode_cards, query, runners, samples
 from ui.components import clear_index_widgets, redraw_flow, stage_banner, step_header
 from ui.mode_copy import mode_intro, render_modes_overview
 
 st.set_page_config(page_title="RAG Pipeline Explorer", page_icon="🔍", layout="wide")
 
-DEFAULTS = {"index_data": None, "results_by_mode": {}, "history": [], "flow_status": {}}
+DEFAULTS = {"index_data": None, "results_by_mode": {}, "history": [], "flow_status": {}, "flow_details": {}}
 for key, value in DEFAULTS.items():
     st.session_state.setdefault(key, copy.deepcopy(value))
 
@@ -63,17 +63,10 @@ with st.sidebar:
 
 settings = {"top_k": top_k, "min_similarity": min_similarity}
 
-st.title("🔍 RAG Pipeline Explorer")
-st.html(
-    '<div class="rag-intro"><b>What is RAG?</b> Retrieval-Augmented Generation lets an AI model answer questions '
-    'about <i>your</i> documents. First, the app prepares your documents so they can be searched: the '
-    f'<b style="color:{INDEX_COLOR}">indexing stage</b>. Then, for each question, it finds the most relevant '
-    f'passages and gives only those to the AI model to write an answer: the <b style="color:{QUERY_COLOR}">query '
-    'stage</b>. Every step below shows exactly what happened to your data, and the query stage lets you try '
-    'several RAG designs.</div>'
-)
+st.html(hero_html())
 
-st.subheader("The pipeline at a glance")
+st.subheader("Map of the pipeline")
+st.caption("It lights up live while a step runs, and each box fills in with the real size of your data.")
 flow_placeholder = st.empty()
 redraw_flow(flow_placeholder)
 st.html(FLOW_LEGEND)
@@ -81,13 +74,16 @@ st.caption("This diagram shows Classic RAG. The other modes in the query stage e
 
 index_data = st.session_state.index_data
 
-stage_banner("index", "Indexing stage", "Runs once per upload. It turns your files into a searchable index. Steps 1 to "
-                                        "5.")
+stage_banner("index", "Stage 1 of 2 · runs once per upload", "Indexing: build the searchable library",
+             "Your files are turned into text, cut into chunks, converted to vectors and stored in a FAISS index. "
+             "Steps 1 to 5.")
 
 with st.container(border=True):
     step_header(1, "Upload documents", "index",
-                "Add the files you want to ask questions about. The app answers only from these files, "
-                "never from the internet.")
+                "Add the files you want to ask questions about, or use the sample library about AI below. "
+                "The app answers only from these files, never from the internet.",
+                hood=[("accepts", ", ".join(UPLOAD_TYPES)),
+                      ("limit", f"{config.MAX_FILES} files · {config.MAX_TOTAL_MB} MB · {config.MAX_CHUNKS} chunks")])
     uploaded_files = st.file_uploader(
         UPLOAD_TYPES_LABEL, type=UPLOAD_TYPES,
         accept_multiple_files=True,
@@ -100,7 +96,9 @@ with st.container(border=True):
         elif total_mb > config.MAX_TOTAL_MB:
             st.error(f"The files add up to {total_mb:.1f} MB. Please stay under {config.MAX_TOTAL_MB} MB.")
         elif st.button(f"Run indexing on {len(uploaded_files)} file(s) · {total_mb:.2f} MB", type="primary", icon="▶️"):
-            runners.run_indexing(uploaded_files, chunk_size, chunk_overlap, flow_placeholder)
+            runners.run_indexing([(f.name, f.getvalue()) for f in uploaded_files], chunk_size, chunk_overlap,
+                                 flow_placeholder)
+    samples.render_sample_library(chunk_size, chunk_overlap, flow_placeholder)
     if index_data:
         st.caption("Currently indexed: " + ", ".join(index_data["files"]))
 
@@ -111,8 +109,8 @@ else:
         with st.container(border=True):
             render(index_data)
 
-stage_banner("query", "Query stage", "Runs once per question. Pick a RAG mode, ask a question, and follow that "
-             "mode's numbered steps.")
+stage_banner("query", "Stage 2 of 2 · runs once per question", "Query: find the right chunks and answer",
+             "Pick a RAG mode, ask a question, and follow that mode's numbered steps from search to answer.")
 
 if not index_data:
     st.info("The query stage searches the index built above, so run indexing first.")
@@ -123,14 +121,16 @@ else:
                     "Each mode answers from the same indexed documents in a different way. Classic RAG is the "
                     "baseline; the others show designs used in real systems, rebuilt here with free tools only.")
         render_modes_overview()
+        if index_data.get("sample"):
+            samples.render_sample_questions()
         mode = st.radio("RAG mode", modes.MODES, index=0, horizontal=True, key="rag_mode",
                         help="Each mode keeps its own last result, so you can switch back and forth.")
         mode_intro(mode)
         st.caption("Agentic RAG, Vectorless RAG and quality scores (always on in RAG evaluation and Compare modes) "
                    "make extra Gemini calls, so those answers take longer and use more of the free quota.")
         with st.form("ask_form", border=False):
-            question = st.text_input("Your question", placeholder="For example: What is the main idea of this "
-                                                                  "document?")
+            question = st.text_input("Your question", key="question",
+                                     placeholder="For example: What is the main idea of this document?")
             with_without, judge, selected = False, True, []
             if mode == modes.MODE_COMPARE:
                 selected = st.multiselect("Modes to compare", modes.COMPARABLE_MODES,

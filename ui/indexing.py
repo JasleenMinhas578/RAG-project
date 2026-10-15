@@ -15,6 +15,7 @@ from src.visuals import (
     chips_html,
     chunk_map_figure,
     neighbors_html,
+    plural,
     vector_bar_figure,
 )
 from ui.components import (
@@ -33,7 +34,10 @@ def render_load(index_data):
     step_header(2, "Load and parse", "index",
                 "Each file is opened and its plain text is extracted. A PDF gives one piece of text per page, "
                 "a CSV file one per row, and a text or Word file one piece for the whole file. Layout and "
-                "images are dropped; only the words remain.")
+                "images are dropped; only the words remain.",
+                hood=[("loaders", "PyPDFLoader · Docx2txtLoader · CSVLoader · TextLoader"),
+                      ("in → out", f"{plural(len(index_data['per_file']), 'file')} → "
+                                   f"{plural(index_data['n_docs'], 'text piece')}")])
     if index_data.get("skipped"):
         st.warning("No text could be read from " + ", ".join(index_data["skipped"])
                    + ". The file may be empty, password-protected, or a scanned image of text.")
@@ -59,7 +63,10 @@ def render_chunk(index_data):
     texts, sources = index_data["texts"], index_data["sources"]
     step_header(3, "Split into chunks", "index",
                 "Long text is cut into short pieces called chunks. Later, the app picks only the few chunks "
-                "that match your question, instead of sending whole documents to the AI model.")
+                "that match your question, instead of sending whole documents to the AI model.",
+                hood=[("splitter", "RecursiveCharacterTextSplitter"),
+                      ("settings", f"size {index_data['chunk_size']} · overlap {index_data['chunk_overlap']}"),
+                      ("in → out", f"{plural(index_data['n_docs'], 'text piece')} → {plural(len(texts), 'chunk')}")])
     term("Chunk overlap", f"neighboring chunks can share up to {index_data['chunk_overlap']} characters, so a sentence "
          "that falls on a cut still appears whole in at least one chunk.", "index")
     if index_data["truncated_from"]:
@@ -119,7 +126,10 @@ def render_embed(index_data):
     step_header(4, "Embed chunks", "index",
                 "A computer cannot compare the meaning of words directly, so each chunk is turned into a list "
                 "of numbers. Texts with similar meaning get similar numbers. This runs on your own computer "
-                f"with a free model (<code>{config.DEFAULT_EMBEDDING_MODEL}</code>), so no API is used.")
+                f"with a free model (<code>{config.DEFAULT_EMBEDDING_MODEL}</code>), so no API is used.",
+                hood=[("model", f"sentence-transformers/{config.DEFAULT_EMBEDDING_MODEL}"),
+                      ("runs", "inside this app, no API"),
+                      ("in → out", f"{plural(len(texts), 'chunk')} → {len(texts)} × {dims} matrix")])
     term("Embedding (also called a vector)", f"a list of {dims} numbers that represents the meaning of a piece "
          f"of text. Every chunk gets its own list, and every list has exactly {dims} numbers.", "index")
 
@@ -183,7 +193,9 @@ def render_index(index_data):
     step_header(5, "Store in the FAISS index (the vector database)", "index",
                 "All embeddings are saved in a FAISS index. It is built to answer one question very fast: "
                 "which stored vectors are closest to a new vector? Step 8 uses exactly this to find chunks "
-                "that match your question.")
+                "that match your question.",
+                hood=[("index", "faiss.IndexFlatL2 (exact search)"), ("plus", "a metadata list in the same order"),
+                      ("in → out", f"{len(texts)} × {dims} matrix → {store.ntotal} searchable vectors")])
     vectors_col, dims_col, memory_col = st.columns(3)
     vectors_col.metric("Vectors stored", store.ntotal)
     dims_col.metric("Numbers per vector", dims)

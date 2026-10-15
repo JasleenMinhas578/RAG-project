@@ -155,7 +155,21 @@ numbers match the flowchart.
   blank lines so markdown treats it as one raw HTML block (a test checks this). The pulse on the
   active step and the hover tips are CSS in the `CSS` block (injected via `st.html`, which keeps
   `<style>`). Rows are column-offset so step 8 sits right of step 5, which keeps every arrow
-  left-to-right and non-crossing; preserve that if steps are added.
+  left-to-right and non-crossing; preserve that if steps are added. Each box also has a small monospace
+  line for the data at that step: `FLOW_DETAILS` defaults, replaced by real sizes ("87 chunks", "4 of 4 sent")
+  that the runners pass to `mark(..., detail=)` and keep in `st.session_state.flow_details`, cleared
+  alongside `flow_status`.
+- **Explorer framing:** the page opens with `visuals.hero_html()` (the title lives there, not in `st.title`),
+  stage banners come from `stage_banner_html`, and `step_header(..., hood=[(label, value), ...])` adds the
+  "Under the hood" strip naming the real component and the input → output sizes for that step.
+  `.streamlit/config.toml` sets `primaryColor` to the indexing blue.
+- **Sample library:** `samples/` holds four AI documents (three Markdown with `##` headings so vectorless
+  RAG gets an outline, one CSV so step 2 shows one piece per row). `src/samples.py` lists them
+  (`SAMPLE_DOCS`) and the suggested questions, each paired with the mode it demonstrates
+  (`SAMPLE_QUESTIONS`). `run_indexing` takes `(name, bytes)` pairs, so uploads and samples share one
+  path, and stores `index_data["sample"]`; step 6 shows the question cards only when it is true. A
+  card's button sets `st.session_state.question` and `rag_mode` in an `on_click` callback — the only
+  point at which Streamlit allows setting a widget's value.
 - **Rank colors link three views:** chunk #k sent to Gemini uses `RANK_COLORS[k]` on the retrieval
   map, in the ranked list, and in the colored prompt. Chunks below the minimum similarity are shown
   gray and hollow, listed separately, and never get a rank number. `prompt_html()` locates the exact

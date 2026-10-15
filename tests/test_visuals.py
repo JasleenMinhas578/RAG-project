@@ -6,22 +6,26 @@ import plotly.graph_objects as go
 import pytest
 
 from src.visuals import (
+    FLOW_DETAILS,
     FLOW_STEPS,
     agentic_flow_svg,
     build_flow_svg,
     chips_html,
     chunk_map_figure,
     find_overlap,
+    hero_html,
     hits_html,
     hover_text,
     mode_detail_html,
     modes_table_html,
     neighbors_html,
     outline_html,
+    plural,
     prompt_html,
     ranked_html,
     retrieval_map_figure,
     scores_html,
+    step_header_html,
 )
 
 
@@ -57,6 +61,34 @@ def test_flowchart_has_ten_steps_one_active_and_no_blank_lines():
     assert "\n\n" not in svg  # a blank line would end markdown's raw-HTML block
     assert svg.count('class="node') == len(FLOW_STEPS) == 10
     assert svg.count('class="node active"') == 1
+
+
+def test_flowchart_shows_default_details_until_real_sizes_replace_them():
+    default = build_flow_svg({})
+    assert FLOW_DETAILS["chunk"] in default
+    live = build_flow_svg({"chunk": "done"}, {"chunk": "87 chunks", "prompt": "<b>" + "x" * 40})
+    assert "87 chunks" in live and FLOW_DETAILS["chunk"] not in live
+    assert FLOW_DETAILS["embed_docs"] in live  # steps without a real size keep their default
+    assert "<b>" not in live and "&lt;b&gt;" in live  # escaped
+    assert "x" * 40 not in live and "…" in live  # long details are shortened to fit the box
+    assert "\n\n" not in live
+
+
+def test_hero_names_the_page_and_both_stages_and_has_no_blank_lines():
+    out = hero_html()
+    assert "RAG Pipeline Explorer" in out and "Indexing" in out and "Query" in out
+    assert "\n\n" not in out
+
+
+def test_step_header_shows_under_the_hood_chips_only_when_given_and_escapes_them():
+    assert "rag-hood" not in step_header_html(3, "Split", "index", "desc")
+    out = step_header_html(3, "Split", "index", "desc", hood=[("tool", "<Splitter>")])
+    assert "Under the hood" in out and "&lt;Splitter&gt;" in out and "<Splitter>" not in out
+
+
+def test_plural():
+    assert plural(1, "chunk") == "1 chunk"
+    assert plural(1200, "chunk") == "1,200 chunks"
 
 
 def test_chips_show_a_sample_and_count_the_rest():

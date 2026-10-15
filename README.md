@@ -8,6 +8,9 @@ Most RAG demos hide the pipeline behind a single "Ask" button. This one shows ev
 result: the parsed text, the chunk boundaries, the embedding vectors, the FAISS index, which chunks
 were retrieved and why, and the exact prompt sent to the model.
 
+**Try it live:** https://rag-project-jasleen.streamlit.app/. No file needed: click **Index the 4
+sample documents** to explore with a small library about AI, then pick one of the suggested questions.
+
 Everything runs on **free tiers**:
 
 | Component | Tool | Cost |
@@ -24,6 +27,7 @@ Everything runs on **free tiers**:
 
 - [What is RAG?](#what-is-rag)
 - [The 10 steps the app visualizes](#the-10-steps-the-app-visualizes)
+- [The sample AI library](#the-sample-ai-library)
 - [RAG modes](#rag-modes)
   - [Which mode to use when](#which-mode-to-use-when)
 - [Getting started](#getting-started)
@@ -72,7 +76,7 @@ flowchart LR
 
 | # | Step | What you see in the app |
 |---|---|---|
-| 1 | **Upload documents** | Drag in up to 5 files (PDF, TXT, MD, CSV, DOCX, XLSX, JSON) |
+| 1 | **Upload documents** | Drag in up to 5 files (PDF, TXT, MD, CSV, DOCX, XLSX, JSON), or index the [sample AI library](#the-sample-ai-library) in one click |
 | 2 | **Load & parse** | The plain text extracted from each file (e.g. one piece per PDF page) |
 | 3 | **Split into chunks** | Chunks per file, and the overlap between neighboring chunks highlighted |
 | 4 | **Embed chunks** | A chunk's 384-number embedding as numbers and as a bar chart, plus three ways to see which chunks are close in meaning: a 2D map, a rotatable 3D map (both PCA, with the share of variance each keeps), or a plain nearest-neighbors list |
@@ -83,9 +87,12 @@ flowchart LR
 | 9 | **Build the prompt** | The exact prompt sent to Gemini, with each retrieved chunk color-coded to match its rank |
 | 10 | **Generate answer** | Gemini's answer with `[#1]`-style citations and a **grounding score**; optionally side by side with the no-documents answer |
 
-A live flowchart at the top of the page lights up each step as it runs. The same rank colors link
-the retrieval map, the ranked list, and the colored prompt, so you can follow any chunk from the
-map to the prompt and into the answer.
+A live flowchart at the top of the page lights up each step as it runs, and each box shows the data
+at that point, filled in with the real sizes from your run: `98 chunks`, `98 × 384`, `4 of 4 sent`,
+`1,919 chars`, `cites #1`. Every step also has an **Under the hood** strip that names the component
+doing the work (`RecursiveCharacterTextSplitter`, `all-MiniLM-L6-v2`, `faiss.IndexFlatL2`, Gemini) and
+its input → output for your documents. The same rank colors link the retrieval map, the ranked list,
+and the colored prompt, so you can follow any chunk from the map to the prompt and into the answer.
 
 **Minimum similarity:** retrieved chunks scoring below this threshold (default 0.25) are not sent to
 Gemini, so loosely related text doesn't dilute the prompt. If nothing passes, the app says so instead
@@ -97,6 +104,34 @@ documents may not contain a good answer. It is not a measure of factual correctn
 
 **With vs. without your documents:** tick the comparison box to see the same question answered by
 Gemini with no retrieved context. The difference between the two answers is the point of RAG.
+
+## The sample AI library
+
+Don't have a document to hand? Step 1 offers four short documents about AI, in
+[`samples/`](samples/), indexed with one click:
+
+| File | What it covers | What it shows off |
+|---|---|---|
+| `history_of_ai.md` | Turing (1950) to ChatGPT (2022): the AI winters, Deep Blue, AlphaGo, the transformer | Clear headings, so **Vectorless RAG** gets a real outline |
+| `how_transformers_work.md` | Tokens, embeddings, self-attention, multi-head attention, the context window | Explains the same embeddings the app draws in step 4 |
+| `training_llms_and_rag.md` | Pretraining, fine-tuning, RLHF, hallucinations, vector search, evaluating RAG | Explains the pipeline you are watching |
+| `ai_glossary.csv` | 21 AI terms and their definitions | A CSV loads as **one piece of text per row** in step 2 |
+
+Once they're indexed, step 6 shows suggested questions. Each one fills in the question and switches
+to the mode that shows it best:
+
+| Question | Mode | What to watch |
+|---|---|---|
+| How does self-attention decide which words to focus on? | Classic RAG | Where the closest chunks land on the map |
+| What is RLHF? | Keyword vs. vector search | Whether exact-word search finds an acronym more directly |
+| What caused the AI winters? | Vectorless RAG | Gemini picking sections from the outline, no vectors |
+| What is 17 times 23? | Agentic RAG | The router skipping retrieval for an off-topic question |
+| Why do language models hallucinate, and how does RAG help? | RAG evaluation | The judge grading whether the answer stays grounded |
+| Who founded OpenAI? | Classic RAG | An answer that says it isn't in the documents instead of guessing |
+| When did AlphaGo beat Lee Sedol, and how did it work? | Compare modes | Several designs answering side by side |
+
+The documents and questions are defined in [`src/samples.py`](src/samples.py). To add a sample, put
+the file in `samples/` and add a row to `SAMPLE_DOCS`.
 
 ## RAG modes
 
@@ -183,9 +218,10 @@ streamlit run streamlit_app.py
 
 Streamlit opens the app at http://localhost:8501. Then:
 
-1. Upload one or more documents and click **Run indexing**.
+1. Upload one or more documents and click **Run indexing**, or click **Index the 4 sample
+   documents** to use the sample AI library.
 2. Explore steps 2–5 as they appear.
-3. Type a question and click **Ask** to see steps 7–10.
+3. Type a question (or pick a suggested one) and click **Ask** to see steps 7–10.
 4. Try changing **chunk size**, **chunk overlap**, **top_k** and **minimum similarity** in the
    sidebar and re-running to see how they affect retrieval.
 5. Tick **Also ask Gemini without my documents** to compare a RAG answer with the model's
@@ -266,7 +302,8 @@ RAG-project/
 │   ├── runners.py
 │   ├── indexing.py
 │   ├── query.py
-│   └── mode_cards.py
+│   ├── mode_cards.py
+│   └── samples.py
 ├── src/                      the pipeline, with no web app
 │   ├── config.py
 │   ├── data_loader.py
@@ -274,7 +311,9 @@ RAG-project/
 │   ├── vectorstore.py
 │   ├── search.py
 │   ├── modes.py
+│   ├── samples.py
 │   └── visuals.py
+├── samples/                  the sample AI library (3 Markdown files, 1 CSV)
 ├── app.py                    CLI example
 ├── tests/                    pytest suite
 ├── archive/                  older standalone notebooks
@@ -295,12 +334,13 @@ Every file is described below.
 | File | What it does | Change it when you want to |
 |---|---|---|
 | `streamlit_app.py` | The page itself: session-state defaults, the sidebar, the layout, and the order the sections appear in | Add a sidebar setting, or move a section |
-| `ui/components.py` | The widgets every section reuses: stage banners, step headers, inline definitions, text boxes, and the shared answer, prompt and score cards | Add something more than one section needs |
+| `ui/components.py` | The widgets every section reuses: stage banners, step headers (with their optional "Under the hood" strip), inline definitions, text boxes, the live flowchart, and the shared answer, prompt and score cards | Add something more than one section needs |
 | `ui/mode_copy.py` | What each RAG mode is, its steps, when it fits and when it doesn't, plus the six-mode comparison table | Reword a mode, or add one |
 | `ui/runners.py` | Does the work: runs a stage, shows live progress, saves every result to session state, then reruns | Change what gets computed or stored |
 | `ui/indexing.py` | The indexing stage, steps 1 to 5 | Change how upload → index is presented |
 | `ui/query.py` | Classic RAG, steps 7 to 11 | Change how a classic answer is presented |
 | `ui/mode_cards.py` | The cards for agentic, vectorless, keyword and compare modes | Change how a non-classic mode explains itself |
+| `ui/samples.py` | The sample library's cards in step 1 and its suggested-question cards in step 6 | Change how the samples are offered |
 
 **The pipeline** — importable on its own, with no web app (see [Using the pipeline in your own code](#using-the-pipeline-in-your-own-code)).
 
@@ -312,7 +352,8 @@ Every file is described below.
 | `src/vectorstore.py` | The FAISS index: add, search, save and load, plus cosine similarity and the settings check on load | Change how vectors are stored or searched |
 | `src/search.py` | `RAGSearch`: retrieve → filter → build the prompt → generate. Also the prompt template, citation parsing, the grounding score and the plain-English Gemini errors | Change the prompt, or an error message |
 | `src/modes.py` | The alternative RAG designs and their Gemini prompts: agentic routing, vectorless outlines, TF-IDF keyword search, and the LLM-as-a-judge scoring | Add a RAG design, or tune a mode's prompt |
-| `src/visuals.py` | All drawing that needs no Streamlit: the colour palette, the CSS block, the flowchart SVG, the HTML snippets and the Plotly figures | Change how anything looks |
+| `src/samples.py` | The sample documents (file, icon, title, description) and the suggested questions, each paired with a mode | Add a sample document or question |
+| `src/visuals.py` | All drawing that needs no Streamlit: the colour palette, the CSS block, the page header, stage banners, the flowchart SVG, the HTML snippets and the Plotly figures | Change how anything looks |
 
 **Project files**
 
@@ -320,7 +361,8 @@ Every file is described below.
 |---|---|
 | `app.py` | Minimal CLI example: build or load a FAISS index from `data/` and ask one question |
 | `tests/` | The pytest suite, one file per `src/` module plus a smoke test that the page renders |
-| `.streamlit/config.toml` | Streamlit settings: file watcher off (see [Troubleshooting](#troubleshooting)), telemetry off |
+| `samples/` | The sample AI library offered in step 1 |
+| `.streamlit/config.toml` | Streamlit settings: file watcher off (see [Troubleshooting](#troubleshooting)), telemetry off, and the theme's primary colour (the indexing blue) |
 | `requirements.txt` | Pinned runtime dependencies, including the transitive `torch` and `transformers` |
 | `requirements-dev.txt` | The above plus `pytest` and `ruff` |
 | `pyproject.toml` | Ruff lint configuration |
@@ -345,7 +387,7 @@ flowchart TB
     end
     subgraph ui["ui/ — what the app draws"]
         direction LR
-        RUN[runners.py<br/>run, save, rerun] --> SEC[indexing.py · query.py<br/>mode_cards.py]
+        RUN[runners.py<br/>run, save, rerun] --> SEC[indexing.py · query.py<br/>mode_cards.py · samples.py]
         CMP[components.py<br/>shared widgets] --> SEC
         COPY[mode_copy.py<br/>mode explanations] --> SEC
     end
@@ -393,8 +435,8 @@ ruff check .        # lint: unused imports, undefined names, import order, likel
 
 The tests cover the pipeline logic (cosine similarity, chunking, the similarity filter, citation
 parsing and the grounding score, error messages), the rendering helpers (the prompt view shows
-exactly the text sent to Gemini, and document text is escaped), and a smoke test that the app page
-renders. They don't call the Gemini API and don't download the embedding model.
+exactly the text sent to Gemini, and document text is escaped), the sample library (every file loads
+and every suggested question names a real mode), and a smoke test that the app page renders. They don't call the Gemini API and don't download the embedding model.
 
 ---
 

@@ -5,3 +5,8 @@ fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+# The indexing-stage blue from src/visuals.py, so buttons and sliders match the pipeline colors
+# instead of Streamlit's default red. Applies to both the light and the dark theme.
+primaryColor = "#2563EB"

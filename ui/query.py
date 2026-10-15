@@ -6,10 +6,12 @@ ui.mode_cards instead.
 
 import streamlit as st
 
+from src import config
 from src.visuals import (
     PREVIEW_DIMS,
     chips_html,
     hits_html,
+    plural,
     prompt_html,
     retrieval_map_figure,
 )
@@ -31,7 +33,9 @@ def render_embed_question(query_result):
     step_header(7, "Embed the question", "query",
                 "Your question goes through the same embedding model as the chunks, so it also becomes a list "
                 f"of {len(query_result['q_vec'])} numbers. Using the same model matters: only then do the question's "
-                "numbers and the chunks' numbers mean the same thing and can be compared.")
+                "numbers and the chunks' numbers mean the same thing and can be compared.",
+                hood=[("model", f"sentence-transformers/{config.DEFAULT_EMBEDDING_MODEL} (same as step 4)"),
+                      ("in → out", f"1 question → 1 × {len(query_result['q_vec'])} vector")])
     question_col, embedding_col = st.columns(2, gap="large")
     with question_col:
         label("Your question")
@@ -46,7 +50,11 @@ def render_retrieve(index_data, query_result):
     step_header(8, "Retrieve the closest chunks", "query",
                 f"The FAISS index compares the question's numbers with every stored vector and returns the "
                 f"{len(kept) + len(dropped)} closest chunks. Chunks scoring below the minimum similarity "
-                f"({query_result['min_similarity']:.2f}) are left out, so only relevant text reaches the AI model.")
+                f"({query_result['min_similarity']:.2f}) are left out, so only relevant text reaches the AI model.",
+                hood=[("search", "FAISS L2 search → cosine similarity"),
+                      ("filter", f"similarity ≥ {query_result['min_similarity']:.2f}"),
+                      ("in → out", f"{len(index_data['texts'])} vectors → top {len(kept) + len(dropped)} "
+                                   f"→ {len(kept)} sent")])
     term("Cosine similarity", "a score for how closely two embeddings point in the same direction. A score near "
          "1 means very similar meaning, and a score near 0 means unrelated. Chunks are ranked by this score.", "query")
     map_col, list_col = st.columns([3, 2], gap="large")
@@ -76,7 +84,10 @@ def render_retrieve(index_data, query_result):
 def render_prompt(query_result):
     step_header(9, "Build the prompt", "query",
                 "The retrieved chunks are pasted into one message, together with your question and a short "
-                "instruction. This message is called the prompt, and it is exactly what gets sent to Gemini.")
+                "instruction. This message is called the prompt, and it is exactly what gets sent to Gemini.",
+                hood=[("built by", "RAGSearch.build_prompt"),
+                      ("in → out", f"{plural(len(query_result['results']), 'chunk')} + question → "
+                                   f"{len(query_result['prompt'] or ''):,} characters")])
     term("Context", "the retrieved chunks, joined in rank order. Each colored block below is the same #1, #2, … "
          "chunk shown on the map and in the ranked list above.", "query")
     if query_result["prompt"] is None:
@@ -93,7 +104,9 @@ def render_generate(query_result, show_scores: bool):
     step_header(10, "Generate the answer", "query",
                 "Gemini reads the prompt and writes an answer. It was told to use only the context, so the answer "
                 "should come from your documents, not from general knowledge. Citations like [#1] point to the "
-                "retrieved chunks above.")
+                "retrieved chunks above.",
+                hood=[("model", f"Gemini ({config.DEFAULT_GEMINI_MODEL}) via ChatGoogleGenerativeAI"),
+                      ("in → out", "prompt → answer with [#n] citations")])
     if query_result["error"]:
         st.error(query_result["error"])
         return
@@ -145,7 +158,9 @@ def render_judge(query_result):
     step_header(11, "Judge the answer", "query",
                 "Gemini is called a second time, now as a judge. It gets the question, the retrieved chunks and the "
                 "answer, and scores the answer on four measures from 1 (poor) to 5 (excellent), each with a "
-                "one-line reason.")
+                "one-line reason.",
+                hood=[("model", f"Gemini ({config.DEFAULT_GEMINI_MODEL}) as judge"),
+                      ("in → out", "question + chunks + answer → 4 scores")])
     term("LLM-as-a-judge", "using an AI language model to grade an AI answer, so many answers can be checked "
          "automatically.", "query")
     if query_result.get("error"):

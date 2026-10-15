@@ -20,21 +20,25 @@ from src.data_loader import load_all_documents
 from src.embedding import EmbeddingPipeline
 from src.search import RAGSearch, filter_by_similarity, friendly_error, grounding_score
 from src.vectorstore import FaissVectorStore
-from src.visuals import find_overlap
-from ui.components import QUERY_STEP_IDS, clear_index_widgets, mark, redraw_flow
+from src.visuals import find_overlap, plural
+from ui.components import QUERY_STEP_IDS, clear_flow, clear_index_widgets, mark, redraw_flow
 
 
-def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_placeholder):
+def run_indexing(files, chunk_size: int, chunk_overlap: int, flow_placeholder, sample: bool = False):
+    """files: (name, contents) pairs -- uploads and the sample library both arrive in this shape.
+    `sample` is saved with the index so step 6 can offer the sample questions."""
+    names = [os.path.basename(name) for name, _ in files]
     st.session_state.flow_status = {}
+    st.session_state.flow_details = {}
     st.session_state.results_by_mode = {}
     clear_index_widgets()
     tmp_dir = tempfile.mkdtemp(prefix="rag_upload_")
     try:
         with st.status("Running the indexing stage…", expanded=True) as status:
-            for upload in uploaded_files:
-                with open(os.path.join(tmp_dir, os.path.basename(upload.name)), "wb") as dest:
-                    dest.write(upload.getbuffer())
-            mark(flow_placeholder, "upload", "done")
+            for name, (_, contents) in zip(names, files, strict=True):
+                with open(os.path.join(tmp_dir, name), "wb") as dest:
+                    dest.write(contents)
+            mark(flow_placeholder, "upload", "done", plural(len(files), "file"))
 
             st.write("Step 2 · Loading and parsing your files…")
             mark(flow_placeholder, "load", "active")
@@ -45,7 +49,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
                 st.error("No text could be extracted from the uploaded files. Scanned PDFs (images of text) are not "
                          "supported.")
                 return
-            mark(flow_placeholder, "load", "done")
+            mark(flow_placeholder, "load", "done", plural(len(docs), "text piece"))
 
             st.write("Step 3 · Splitting the text into chunks…")
             mark(flow_placeholder, "chunk", "active")
@@ -54,7 +58,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
             chunks = pipe.chunk_documents(docs)
             truncated_from = len(chunks) if len(chunks) > config.MAX_CHUNKS else None
             chunks = chunks[:config.MAX_CHUNKS]
-            mark(flow_placeholder, "chunk", "done")
+            mark(flow_placeholder, "chunk", "done", plural(len(chunks), "chunk"))
 
             st.write("Step 4 · Turning each chunk into a list of numbers…")
             mark(flow_placeholder, "embed_docs", "active")
@@ -64,7 +68,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
                 progress_callback=lambda done, total: progress.progress(done / total,
                                                                        text=f"{done} of {total} chunks")
             ), dtype="float32")
-            mark(flow_placeholder, "embed_docs", "done")
+            mark(flow_placeholder, "embed_docs", "done", f"{embeddings.shape[0]} × {embeddings.shape[1]}")
 
             st.write("Step 5 · Storing the vectors in the FAISS index…")
             mark(flow_placeholder, "index", "active")
@@ -78,7 +82,7 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
                        random_state=config.PCA_RANDOM_STATE).fit(embeddings)
                    if len(chunks) >= 2 else None)
             projected = pca.transform(embeddings) if pca is not None else None
-            mark(flow_placeholder, "index", "done")
+            mark(flow_placeholder, "index", "done", plural(store.ntotal, "vector"))
             status.update(label="Indexing complete", state="complete")
 
         per_file, file_texts = {}, {}
@@ -100,12 +104,12 @@ def run_indexing(uploaded_files, chunk_size: int, chunk_overlap: int, flow_place
                     break
 
         st.session_state.index_data = {
-            "files": [os.path.basename(f.name) for f in uploaded_files],
+            "files": names,
+            "sample": sample,
             "per_file": per_file,
             # load_all_documents only logs a file it couldn't parse, and the app's terminal is not
             # in front of the user, so name them on the page instead of letting them vanish.
-            "skipped": [os.path.basename(f.name) for f in uploaded_files
-                        if os.path.basename(f.name) not in per_file],
+            "skipped": [name for name in names if name not in per_file],
             "n_docs": len(docs),
             "texts": texts,
             "sources": sources,
@@ -138,8 +142,7 @@ def start_query(api_key: str, flow_placeholder=None):
     """
     index_data = st.session_state.index_data
     rag = RAGSearch(vectorstore=index_data["store"], google_api_key=api_key)
-    for step_id in QUERY_STEP_IDS:
-        st.session_state.flow_status.pop(step_id, None)
+    clear_flow(QUERY_STEP_IDS)
     if flow_placeholder is not None:
         redraw_flow(flow_placeholder)
     return index_data, rag
@@ -160,7 +163,7 @@ def run_query(question: str, top_k: int, min_similarity: float, compare: bool, j
                     "compare": compare, "plain_answer": None, "plain_error": None}
 
     with st.status(f"Running {mode}…", expanded=True) as status:
-        mark(flow_placeholder, "question", "done")
+        mark(flow_placeholder, "question", "done", plural(len(question.split()), "word"))
 
         st.write("Step 7 · Turning your question into numbers…")
         mark(flow_placeholder, "embed_q", "active")
@@ -168,19 +171,21 @@ def run_query(question: str, top_k: int, min_similarity: float, compare: bool, j
         projected_q = index_data["pca"].transform([query_result["q_vec"]])[0] if index_data["pca"] is not None else None
         query_result["q_point"] = projected_q[:2] if projected_q is not None else None
         query_result["q_point3d"] = projected_q if index_data["coords3d"] is not None else None
-        mark(flow_placeholder, "embed_q", "done")
+        mark(flow_placeholder, "embed_q", "done", f"1 × {len(query_result['q_vec'])}")
 
         st.write("Step 8 · Finding the closest chunks…")
         mark(flow_placeholder, "retrieve", "active")
         query_result["results"], query_result["dropped"] = filter_by_similarity(
             rag.retrieve(question, top_k=top_k), min_similarity)
-        mark(flow_placeholder, "retrieve", "done")
+        kept, dropped = query_result["results"], query_result["dropped"]
+        mark(flow_placeholder, "retrieve", "done", f"{len(kept)} of {len(kept) + len(dropped)} sent")
 
         st.write("Step 9 · Building the prompt…")
         mark(flow_placeholder, "prompt", "active")
         query_result["blocks"] = rag.context_blocks(query_result["results"])
         query_result["prompt"] = rag.build_prompt(question, query_result["results"])
-        mark(flow_placeholder, "prompt", "done" if query_result["prompt"] else "pending")
+        prompt = query_result["prompt"]
+        mark(flow_placeholder, "prompt", "done" if prompt else "pending", f"{len(prompt):,} chars" if prompt else None)
 
         if query_result["prompt"] is None:
             if query_result["dropped"]:
@@ -198,7 +203,10 @@ def run_query(question: str, top_k: int, min_similarity: float, compare: bool, j
             try:
                 query_result["answer"] = rag.generate_answer(query_result["prompt"])
                 query_result["grounding"] = grounding_score(query_result["answer"], query_result["results"])
-                mark(flow_placeholder, "generate", "done")
+                cited = query_result["grounding"]["basis"] == "cited"
+                mark(flow_placeholder, "generate", "done",
+                     "cites " + " ".join(f"#{r}" for r in query_result["grounding"]["ranks"]) if cited
+                     else "no citations")
             except Exception as e:  # shown to the user in step 10 instead of crashing the page
                 query_result["error"] = friendly_error(e)
                 mark(flow_placeholder, "generate", "pending")

@@ -7,10 +7,18 @@ import html
 
 import streamlit as st
 
-from src.visuals import STAGE_COLOR, build_flow_svg, prompt_html, scores_html
+from src.visuals import (
+    STAGE_COLOR,
+    build_flow_svg,
+    prompt_html,
+    scores_html,
+    stage_banner_html,
+    step_header_html,
+)
 
 # The query stage's flowchart steps, in order. Cleared together whenever a new question starts.
 QUERY_STEP_IDS = ("question", "embed_q", "retrieve", "prompt", "generate")
+INDEX_STEP_IDS = ("upload", "load", "chunk", "embed_docs", "index")
 
 # Widgets whose remembered choice refers to a specific index: which chunk was being inspected and
 # which map view was open. Indexing again, or resetting, makes those choices meaningless, so both
@@ -25,22 +33,30 @@ def clear_index_widgets():
 
 def redraw_flow(flow_placeholder):
     # st.markdown, not st.html: st.html's sanitizer strips <svg> entirely.
-    flow_placeholder.markdown(build_flow_svg(st.session_state.flow_status), unsafe_allow_html=True)
+    flow_placeholder.markdown(build_flow_svg(st.session_state.flow_status, st.session_state.flow_details),
+                              unsafe_allow_html=True)
 
 
-def mark(flow_placeholder, step_id: str, state: str):
+def mark(flow_placeholder, step_id: str, state: str, detail: str | None = None):
+    """Set a flowchart step's state, and optionally the real size of its data ("87 chunks")."""
     st.session_state.flow_status[step_id] = state
+    if detail is not None:
+        st.session_state.flow_details[step_id] = detail
     redraw_flow(flow_placeholder)
 
 
-def stage_banner(stage: str, title: str, subtitle: str):
-    st.html(f'<div class="rag-stage" style="background:{STAGE_COLOR[stage]}">'
-            f'<div class="t">{title}</div><div class="s">{subtitle}</div></div>')
+def clear_flow(step_ids):
+    for step_id in step_ids:
+        st.session_state.flow_status.pop(step_id, None)
+        st.session_state.flow_details.pop(step_id, None)
 
 
-def step_header(num, title: str, stage: str, description: str):
-    st.html(f'<div class="rag-step"><div class="rag-badge" style="background:{STAGE_COLOR[stage]}">{num}</div>'
-            f'<div><div class="t">{title}</div><div class="d">{description}</div></div></div>')
+def stage_banner(stage: str, eyebrow: str, title: str, subtitle: str):
+    st.html(stage_banner_html(stage, eyebrow, title, subtitle))
+
+
+def step_header(num, title: str, stage: str, description: str, hood=()):
+    st.html(step_header_html(num, title, stage, description, hood))
 
 
 def term(word: str, definition: str, stage: str):
