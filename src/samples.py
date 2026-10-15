@@ -42,6 +42,11 @@ SAMPLE_QUESTIONS = (
 )
 
 
+def read_sample(name: str) -> str:
+    """The text of one sample document, for reading it on the page."""
+    return (SAMPLE_DIR / name).read_text(encoding="utf-8")
+
+
 def sample_files() -> list[tuple[str, bytes]]:
     """(file name, contents) for every sample document, in the same shape as an upload."""
     return [(name, (SAMPLE_DIR / name).read_bytes()) for name, *_ in SAMPLE_DOCS]

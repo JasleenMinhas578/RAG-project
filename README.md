@@ -108,7 +108,9 @@ Gemini with no retrieved context. The difference between the two answers is the 
 ## The sample AI library
 
 Don't have a document to hand? Step 1 offers four short documents about AI, in
-[`samples/`](samples/), indexed with one click:
+[`samples/`](samples/), indexed with one click. **Read the 4 sample documents**, just above the
+button, shows each one in full (the glossary as a table) with a download button, so you can see
+what the answers will come from, or download a file and try uploading it yourself:
 
 | File | What it covers | What it shows off |
 |---|---|---|

@@ -166,7 +166,8 @@ numbers match the flowchart.
 - **Sample library:** `samples/` holds four AI documents (three Markdown with `##` headings so vectorless
   RAG gets an outline, one CSV so step 2 shows one piece per row). `src/samples.py` lists them
   (`SAMPLE_DOCS`) and the suggested questions, each paired with the mode it demonstrates
-  (`SAMPLE_QUESTIONS`). `run_indexing` takes `(name, bytes)` pairs, so uploads and samples share one
+  (`SAMPLE_QUESTIONS`). Step 1 also shows every sample in full (`render_sample_documents`): Markdown with
+  its headings shifted two levels down for display only, the CSV as a markdown table so cells wrap. `run_indexing` takes `(name, bytes)` pairs, so uploads and samples share one
   path, and stores `index_data["sample"]`; step 6 shows the question cards only when it is true. A
   card's button sets `st.session_state.question` and `rag_mode` in an `on_click` callback — the only
   point at which Streamlit allows setting a widget's value.

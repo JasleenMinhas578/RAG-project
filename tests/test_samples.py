@@ -15,6 +15,11 @@ def test_sample_files_are_name_and_bytes_pairs_in_library_order():
     assert all(isinstance(contents, bytes) and contents for _, contents in files)
 
 
+def test_read_sample_returns_the_same_text_that_gets_indexed():
+    for name, contents in samples.sample_files():
+        assert samples.read_sample(name) == contents.decode("utf-8")
+
+
 def test_the_sample_directory_loads_with_one_piece_per_glossary_row():
     docs = load_all_documents(str(samples.SAMPLE_DIR))
     sources = [d.metadata["source"] for d in docs]
